@@ -183,10 +183,10 @@
   │ [function] saveQuotaExceededUsage (line 22)
 
 📁 packages/backend/src/routes/inference/chat.ts:
-  │ [function] registerChatRoute (line 20)
+  │ [function] registerChatRoute (line 21)
 
 📁 packages/backend/src/routes/inference/completions.ts:
-  │ [function] registerCompletionsRoute (line 20)
+  │ [function] registerCompletionsRoute (line 21)
 
 📁 packages/backend/src/routes/inference/embeddings.ts:
   │ [function] registerEmbeddingsRoute (line 15)
@@ -1286,7 +1286,7 @@
   │ [function] validateUrlSafety (line 26)
 
 📁 packages/backend/src/services/providers/provider-request-headers.ts:
-  │ [function] setupProviderHeaders (line 5)
+  │ [function] setupProviderHeaders (line 8)
 
 📁 packages/backend/src/services/quota/checker-registry.ts:
   │ [interface] AllowanceParams (line 37)
