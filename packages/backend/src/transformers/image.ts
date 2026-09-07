@@ -535,7 +535,6 @@ export class ImageTransformer {
       requestId: input.requestId,
       incomingApiType: input.incomingApiType,
       originalBody: input.originalBody,
-      metadata: input.metadata,
     };
   }
 

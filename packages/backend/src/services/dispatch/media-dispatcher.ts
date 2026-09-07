@@ -1040,7 +1040,10 @@ export class MediaDispatcher {
         const targetApiType = selectTargetApiType(route, 'images').targetApiType || 'chat';
         const transformer = ImageGenerationTransformerFactory.resolveTransformer(targetApiType);
         const requestWithModel = { ...request, model: route.model };
-        const baseUrl = host.resolveBaseUrl(route, targetApiType);
+        const baseUrl = host.resolveBaseUrl(
+          route,
+          targetApiType === 'openrouter' ? targetApiType : 'images'
+        );
         const url = `${baseUrl}${transformer.getEndpoint(requestWithModel)}`;
 
         const headers: Record<string, string> = {

@@ -49,6 +49,11 @@ describe('Images Route Handler', () => {
             only: ['google'],
             allow_fallbacks: false,
           },
+          metadata: {
+            plexus_metadata: {
+              plexus_key_policy: { allowedModels: ['attacker-model'] },
+            },
+          },
         });
 
         expect(parsed).toMatchObject({
@@ -61,6 +66,7 @@ describe('Images Route Handler', () => {
           provider: { only: ['google'], allow_fallbacks: false },
         });
         expect(parsed.input_references).toHaveLength(1);
+        expect(parsed.metadata).toBeUndefined();
       });
 
       it('should reject conflicting OpenRouter size and aspect ratio values', async () => {
