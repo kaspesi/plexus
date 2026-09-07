@@ -33,6 +33,13 @@ const API_ACCESS_OPTIONS = [
   { type: 'ollama', label: 'ollama' },
 ] as const;
 
+const IMAGE_API_ACCESS_OPTIONS = [
+  { type: 'chat', label: 'OpenAI-compatible' },
+  { type: 'openai-images', label: 'OpenAI Images' },
+  { type: 'openrouter-images', label: 'OpenRouter Images' },
+  { type: 'gemini', label: 'Gemini Images' },
+] as const;
+
 const GPT5_SUPPRESSION_ADAPTER = 'suppress_unsupported_gpt5_options';
 
 function isGpt5Model(modelId: string): boolean {
@@ -55,10 +62,12 @@ const getApiBadgeStyle = (apiType: string): React.CSSProperties => {
       return { backgroundColor: '#a855f7', color: 'white', border: 'none' };
     case 'speech':
       return { backgroundColor: '#f97316', color: 'white', border: 'none' };
-    case 'images':
+    case 'openai-images':
       return { backgroundColor: '#d946ef', color: 'white', border: 'none' };
     case 'responses':
       return { backgroundColor: '#06b6d4', color: 'white', border: 'none' };
+    case 'openrouter-images':
+      return { backgroundColor: '#7c3aed', color: 'white', border: 'none' };
     case 'ollama':
       return { backgroundColor: '#1a5f7a', color: 'white', border: 'none' };
     default:
@@ -373,7 +382,10 @@ export function ProviderModelsEditor({
                                 else if (newType === 'speech')
                                   updateModelConfig(mId, { type: newType, access_via: ['speech'] });
                                 else if (newType === 'image')
-                                  updateModelConfig(mId, { type: newType, access_via: ['images'] });
+                                  updateModelConfig(mId, {
+                                    type: newType,
+                                    access_via: ['openai-images'],
+                                  });
                                 else updateModelConfig(mId, { type: newType });
                               }}
                             >
@@ -385,7 +397,7 @@ export function ProviderModelsEditor({
                             </select>
                           </div>
 
-                          {(!mCfg.type || mCfg.type === 'text') && (
+                          {(!mCfg.type || mCfg.type === 'text' || mCfg.type === 'image') && (
                             <div className="flex flex-col gap-1">
                               <label className="font-body text-[11px] font-medium text-text-secondary">
                                 Access Via
@@ -397,7 +409,10 @@ export function ProviderModelsEditor({
                                   gap: '4px',
                                 }}
                               >
-                                {API_ACCESS_OPTIONS.map((option) => {
+                                {(mCfg.type === 'image'
+                                  ? IMAGE_API_ACCESS_OPTIONS
+                                  : API_ACCESS_OPTIONS
+                                ).map((option) => {
                                   const key = apiAccessToKey(option);
                                   const selected = hasApiAccess(mCfg.access_via, key);
                                   return (
@@ -407,6 +422,13 @@ export function ProviderModelsEditor({
                                           type="checkbox"
                                           checked={selected}
                                           onChange={() => {
+                                            if (mCfg.type === 'image') {
+                                              updateModelConfig(mId, {
+                                                access_via: selected ? [] : [key],
+                                              });
+                                              return;
+                                            }
+
                                             let next = toggleApiAccess(mCfg.access_via, option);
                                             if (key === 'responses' && selected) {
                                               next = next.filter(
@@ -498,6 +520,16 @@ export function ProviderModelsEditor({
                                 }
                                 return null;
                               })()}
+                              {mCfg.type === 'image' && (
+                                <div className="flex items-start gap-2 py-1.5 px-2 bg-info/10 border border-info/30 rounded-sm">
+                                  <Info size={14} className="text-info shrink-0 mt-0.5" />
+                                  <span className="text-[11px] text-info">
+                                    Choose one image protocol. OpenRouter Images targets the
+                                    dedicated <code>/api/v1/images</code> endpoint;
+                                    OpenAI-compatible and Gemini Images use their native adapters.
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           )}
 
