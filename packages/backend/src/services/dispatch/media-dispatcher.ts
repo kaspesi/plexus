@@ -1047,7 +1047,10 @@ export class MediaDispatcher {
             ? (route.config.api_base_url as Record<string, string>)
             : undefined;
         const hasNativeBaseUrl =
-          !urlMap || !!urlMap[targetApiType.toLowerCase()] || !!urlMap[targetBaseType];
+          !urlMap ||
+          !!urlMap[targetApiType.toLowerCase()] ||
+          !!urlMap[targetBaseType] ||
+          !!urlMap.default;
         const baseUrl = host.resolveBaseUrl(
           route,
           (targetBaseType === 'openrouter' || targetBaseType === 'gemini') && hasNativeBaseUrl
