@@ -92,11 +92,12 @@ export function selectTargetApiType(
  * @returns Normalized base URL without trailing slash
  */
 export function resolveImageProviderBaseUrl(route: RouteResult, targetApiType: string): string {
-  if (typeof route.config.api_base_url === 'string') {
+  const apiBaseUrl = route.config.api_base_url;
+  if (!apiBaseUrl || typeof apiBaseUrl === 'string') {
     return resolveProviderBaseUrl(route, targetApiType);
   }
 
-  const urlMap = route.config.api_base_url as Record<string, string>;
+  const urlMap = apiBaseUrl as Record<string, string>;
   const targetBaseType = getApiBaseType(targetApiType);
   const isNativeImageTarget = targetBaseType === 'gemini' || targetBaseType === 'openrouter';
   const hasNativeBaseUrl =
