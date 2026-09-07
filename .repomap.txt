@@ -668,7 +668,7 @@
   │ [method] buildAllTargetsFailedError (line 142)
   │ [method] constructor (line 153)
   │ [method] dispatchEmbeddings (line 162)
-  │ [method] dispatchImageEdits (line 1220)
+  │ [method] dispatchImageEdits (line 1228)
   │ [method] dispatchImageGenerations (line 966)
   │ [method] dispatchSpeech (line 665)
   │ [method] dispatchTranscription (line 419)

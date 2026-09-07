@@ -1042,9 +1042,17 @@ export class MediaDispatcher {
         const transformer = ImageGenerationTransformerFactory.resolveTransformer(targetApiType);
         const requestWithModel = { ...request, model: route.model };
         const targetBaseType = getApiBaseType(targetApiType);
+        const urlMap =
+          typeof route.config.api_base_url === 'object' && route.config.api_base_url !== null
+            ? (route.config.api_base_url as Record<string, string>)
+            : undefined;
+        const hasNativeBaseUrl =
+          !urlMap || !!urlMap[targetApiType.toLowerCase()] || !!urlMap[targetBaseType];
         const baseUrl = host.resolveBaseUrl(
           route,
-          targetBaseType === 'openrouter' || targetBaseType === 'gemini' ? targetApiType : 'images'
+          (targetBaseType === 'openrouter' || targetBaseType === 'gemini') && hasNativeBaseUrl
+            ? targetApiType
+            : 'images'
         );
         const url = `${baseUrl}${transformer.getEndpoint(requestWithModel)}`;
 
