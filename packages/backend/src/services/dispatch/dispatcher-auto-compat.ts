@@ -251,8 +251,13 @@ function projectOpenAiCompletionsAutoCompat(
       delete next.reasoning_effort;
       break;
     case 'ant-ling':
-      if (enabled && mapped) next.reasoning = { effort: mapped };
+      // Ant-ling can only express ENABLE with a mapped effort — when the
+      // intent is disable (or unexpressible) the only safe translation is to
+      // drop the unified notation entirely rather than leak it upstream.
+      // (mirrors pi-ai's ant-ling branch, which writes from scratch)
+      delete next.reasoning;
       delete next.reasoning_effort;
+      if (enabled && mapped) next.reasoning = { effort: mapped };
       break;
     case 'together':
       // Together natively consumes BOTH notations — nothing to strip.

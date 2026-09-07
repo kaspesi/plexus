@@ -326,6 +326,54 @@ describe('Dispatcher registry auto-compat', () => {
     expect(result.payload.reasoning).toBeUndefined();
   });
 
+  test('ant-ling drops the unified reasoning notation when the intent is a disable it cannot express', async () => {
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(
+      piModel({ compat: { supportsReasoningEffort: true, thinkingFormat: 'ant-ling' } })
+    );
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning: { enabled: false },
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning).toBeUndefined();
+    expect(result.payload.reasoning_effort).toBeUndefined();
+  });
+
+  test('ant-ling emits its own reasoning object and strips reasoning_effort when enabled', async () => {
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(
+      piModel({ compat: { supportsReasoningEffort: true, thinkingFormat: 'ant-ling' } })
+    );
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning_effort: 'high',
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning).toEqual({ effort: 'high' });
+    expect(result.payload.reasoning_effort).toBeUndefined();
+  });
+
   test('leaves untranslated reasoning fields untouched when no intent is recognized', async () => {
     // With model.reasoning disabled there is nothing to translate — the
     // projection is a no-op passthrough and must NOT strip the field (it may
