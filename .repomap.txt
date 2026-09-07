@@ -1567,18 +1567,18 @@
 
 📁 packages/backend/src/services/routing/router.ts:
   │ [interface] RouteResult (line 25)
-  │ [class] Router (line 456)
-  │ [function] buildGroupCandidates (line 379)
-  │ [function] dedupeCandidates (line 367)
+  │ [class] Router (line 462)
+  │ [function] buildGroupCandidates (line 385)
+  │ [function] dedupeCandidates (line 373)
   │ [function] filterGroupTargets (line 61)
   │ [function] findAlias (line 45)
   │ [function] isImageApiType (line 19)
-  │ [method] resolve (line 557)
-  │ [method] resolveCandidates (line 457)
-  │ [method] resolveDirect (line 649)
-  │ [function] selectOrderedTargets (line 331)
+  │ [method] resolve (line 563)
+  │ [method] resolveCandidates (line 463)
+  │ [method] resolveDirect (line 655)
+  │ [function] selectOrderedTargets (line 337)
   │ [function] tryParseDirectGroup (line 34)
-  │ [function] withVisited (line 361)
+  │ [function] withVisited (line 367)
 
 📁 packages/backend/src/services/routing/scope-match.ts:
   │ [interface] ScopeLists (line 15)

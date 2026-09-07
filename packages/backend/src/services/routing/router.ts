@@ -249,8 +249,14 @@ async function filterGroupTargets(
 
       const providerTypes = getProviderTypes(providerConfig);
       let modelSpecificTypes: ModelProviderConfig['access_via'];
+      let modelType: ModelProviderConfig['type'];
       if (!Array.isArray(providerConfig.models) && providerConfig.models) {
-        modelSpecificTypes = providerConfig.models[target.model]?.access_via;
+        const modelConfig = providerConfig.models[target.model];
+        modelSpecificTypes = modelConfig?.access_via;
+        modelType = modelConfig?.type;
+      }
+      if (normalizedIncoming === 'images' && (modelType === 'text' || modelType === 'embeddings')) {
+        return false;
       }
       const availableTypes =
         modelSpecificTypes && modelSpecificTypes.length > 0
