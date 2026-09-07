@@ -487,6 +487,9 @@ describe('MCP Proxy Service', () => {
         id: 1,
         result: { cacheScope: 'public', tools: [{ name: 'example_tool' }] },
       });
+      // The rewritten body is shorter than the upstream payload, so the
+      // forwarded content-length must be dropped or the response hangs.
+      expect(result.headers['content-length']).toBeUndefined();
     });
 
     test('leaves ttlMs untouched on buffered non-tools/list JSON responses', async () => {
@@ -577,6 +580,12 @@ describe('MCP Proxy Service', () => {
       ).toBe(true);
       expect(requestsToolsList({ jsonrpc: '2.0', method: 'tools/call', id: 1 })).toBe(false);
       expect(requestsToolsList(undefined)).toBe(false);
+    });
+
+    test('requestsToolsList parses raw string bodies', () => {
+      expect(requestsToolsList('{"jsonrpc":"2.0","method":"tools/list","id":1}')).toBe(true);
+      expect(requestsToolsList('{"jsonrpc":"2.0","method":"tools/call","id":1}')).toBe(false);
+      expect(requestsToolsList('not json')).toBe(false);
     });
 
     test('removes a zero ttlMs from tools/list results', () => {

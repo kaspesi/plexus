@@ -237,7 +237,15 @@ export function extractJsonRpcMethod(body: unknown): string | null {
 }
 
 export function requestsToolsList(body: unknown): boolean {
-  return extractJsonRpcMethods(body).includes('tools/list');
+  let parsed = body;
+  if (typeof body === 'string') {
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return false;
+    }
+  }
+  return extractJsonRpcMethods(parsed).includes('tools/list');
 }
 
 // Some upstreams (GitHub's MCP server) advertise a non-positive `ttlMs` on
@@ -500,6 +508,10 @@ export async function proxyMcpRequest(
     try {
       parsedBody = JSON.parse(responseText);
       if (toolsListRequested && stripZeroTtlFromToolsListResult(parsedBody)) {
+        // The serialized body no longer matches upstream's content-length.
+        for (const key of Object.keys(responseHeaders)) {
+          if (key.toLowerCase() === 'content-length') delete responseHeaders[key];
+        }
         logger.silly(
           '[mcp-proxy:' + serverName + '] stripped non-positive ttlMs from tools/list result'
         );
