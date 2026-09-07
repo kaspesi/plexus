@@ -5,18 +5,11 @@ export interface ApiFormat {
 
 export type ApiAccess = string | ApiFormat;
 
-function canonicalizeApiType(type: string): string {
-  const normalized = type.trim().toLowerCase();
-  if (normalized === 'images') return 'openai-images';
-  if (normalized === 'openrouter') return 'openrouter-images';
-  return normalized;
-}
-
 export function apiAccessToKey(access: ApiAccess): string {
-  if (typeof access === 'string') return canonicalizeApiType(access);
+  if (typeof access === 'string') return access.trim().toLowerCase();
   const type = access.type.trim().toLowerCase();
   const subtype = access.subtype?.trim().toLowerCase();
-  return subtype ? `${type}:${subtype}` : canonicalizeApiType(type);
+  return subtype ? `${type}:${subtype}` : type;
 }
 
 export function getApiBaseType(apiType: string): string {

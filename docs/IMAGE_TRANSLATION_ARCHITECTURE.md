@@ -21,7 +21,7 @@ OpenRouter-shaped JSON request
 ```
 
 The initial implementation covers buffered text-to-image and reference-image-conditioned generation
-against configured OpenAI Images-compatible image endpoints, the dedicated OpenRouter `/images` endpoint, and native Gemini image-generating models. The configured target API types are `openai-images`, `openrouter-images`, and `gemini`; legacy `images`/`openrouter` values are accepted as aliases.
+against configured OpenAI Images-compatible image endpoints, the dedicated OpenRouter `/images` endpoint, and native Gemini image-generating models. The configured target API types are `openai-images`, `openrouter-images`, and `gemini`.
 Preserve the existing `/v1/images/generations` JSON and `/v1/images/edits` multipart compatibility
 surfaces; they should converge on the same image IR rather than acquire separate provider pipelines.
 “OpenRouter-shaped” means `model`, `prompt`, and image options, **not** chat `messages`/`modalities` or

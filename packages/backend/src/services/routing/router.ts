@@ -17,9 +17,7 @@ import { StickySessionManager } from './sticky-session-manager';
 import { getApiBaseType, isApiSubtype, normalizeApiAccessList } from '../../utils/api-format';
 
 function isImageApiType(apiType: string): boolean {
-  return ['chat', 'gemini', 'openai-images', 'openrouter-images', 'images', 'openrouter'].includes(
-    getApiBaseType(apiType)
-  );
+  return ['chat', 'gemini', 'openai-images', 'openrouter-images'].includes(getApiBaseType(apiType));
 }
 
 export interface RouteResult {

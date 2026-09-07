@@ -13,9 +13,7 @@ const API_TYPE_ALIASES: Record<string, string[]> = {
   embeddings: ['chat', 'gemini'],
   transcriptions: ['chat', 'gemini'],
   speech: ['chat', 'gemini'],
-  images: ['openai-images', 'images', 'chat', 'gemini'],
-  'openai-images': ['images', 'chat', 'gemini'],
-  'openrouter-images': ['openrouter', 'images', 'chat', 'gemini'],
+  'openai-images': ['chat', 'gemini'],
 };
 
 function stripTrailingApiVersion(url: string): string {
@@ -64,9 +62,7 @@ export function selectTargetApiType(
       (t: string) =>
         t.toLowerCase() === incoming ||
         (incoming === 'images' &&
-          ['chat', 'gemini', 'openai-images', 'openrouter-images', 'images', 'openrouter'].includes(
-            getApiBaseType(t)
-          ))
+          ['chat', 'gemini', 'openai-images', 'openrouter-images'].includes(getApiBaseType(t)))
     );
     if (match) {
       targetApiType = match;
@@ -101,23 +97,7 @@ export function selectTargetApiType(
  * @returns Normalized base URL without trailing slash
  */
 export function resolveImageProviderBaseUrl(route: RouteResult, targetApiType: string): string {
-  if (typeof route.config.api_base_url === 'string') {
-    return resolveProviderBaseUrl(route, targetApiType);
-  }
-
-  const urlMap = route.config.api_base_url as Record<string, string>;
-  const targetBaseType = getApiBaseType(targetApiType);
-  const isOpenAiCompatibleTarget = ['chat', 'completions', 'openai', 'images'].includes(
-    targetBaseType
-  );
-
-  if (isOpenAiCompatibleTarget && (urlMap['openai-images'] || urlMap.images)) {
-    return resolveProviderBaseUrl(route, 'openai-images');
-  }
-  return resolveProviderBaseUrl(
-    route,
-    targetApiType === 'images' ? 'openai-images' : targetApiType
-  );
+  return resolveProviderBaseUrl(route, targetApiType);
 }
 
 export function resolveProviderBaseUrl(route: RouteResult, targetApiType: string): string {

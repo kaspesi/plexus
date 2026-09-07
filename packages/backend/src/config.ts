@@ -5,7 +5,6 @@ import { DEFAULT_VISION_DESCRIPTION_PROMPT } from './utils/constants';
 import { isValidIpRule } from './utils/ip-match';
 import { getCatalogModel } from './services/pi-ai/catalog';
 import { isKnownOAuthProviderId } from './services/oauth/oauth-providers';
-import { canonicalizeApiAccessKey } from './utils/api-format';
 
 // --- Zod Schemas ---
 
@@ -890,12 +889,10 @@ export function getProviderTypes(provider: ProviderConfig): string[] {
   } else {
     // Record/map format - keys are the supported types
     const urlMap = provider.api_base_url as Record<string, string>;
-    return Object.keys(urlMap)
-      .filter((key) => {
-        const value = urlMap[key];
-        return typeof value === 'string' && value.length > 0;
-      })
-      .map(canonicalizeApiAccessKey);
+    return Object.keys(urlMap).filter((key) => {
+      const value = urlMap[key];
+      return typeof value === 'string' && value.length > 0;
+    });
   }
 }
 

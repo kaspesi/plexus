@@ -64,13 +64,9 @@ const getApiBadgeStyle = (apiType: string): React.CSSProperties => {
       return { backgroundColor: '#f97316', color: 'white', border: 'none' };
     case 'openai-images':
       return { backgroundColor: '#d946ef', color: 'white', border: 'none' };
-    case 'images':
-      return { backgroundColor: '#d946ef', color: 'white', border: 'none' };
     case 'responses':
       return { backgroundColor: '#06b6d4', color: 'white', border: 'none' };
     case 'openrouter-images':
-      return { backgroundColor: '#7c3aed', color: 'white', border: 'none' };
-    case 'openrouter':
       return { backgroundColor: '#7c3aed', color: 'white', border: 'none' };
     case 'ollama':
       return { backgroundColor: '#1a5f7a', color: 'white', border: 'none' };
