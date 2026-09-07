@@ -223,6 +223,105 @@ describe('Dispatcher registry auto-compat', () => {
 
     expect(result.payload.reasoning_effort).toBe('low');
   });
+
+  test('translates a client-sent reasoning object to reasoning_effort on the default format', async () => {
+    // Strict OpenAI-compatible upstreams (e.g. the Meta Model API) hard-400 on
+    // the Responses-style `reasoning` object; the projection must emit ONLY the
+    // translated `reasoning_effort` and strip the leftover object.
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning: { effort: 'high' },
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning).toBeUndefined();
+    expect(result.payload.reasoning_effort).toBe('high');
+  });
+
+  test('openrouter format emits the reasoning object and strips stale reasoning_effort', async () => {
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(
+      piModel({ compat: { supportsReasoningEffort: true, thinkingFormat: 'openrouter' } })
+    );
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning_effort: 'medium',
+        },
+      }),
+      route({ provider: 'openrouter' }),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning).toEqual({ effort: 'medium' });
+    expect(result.payload.reasoning_effort).toBeUndefined();
+  });
+
+  test('qwen format translates to enable_thinking and strips both OpenAI-style notations', async () => {
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(
+      piModel({ compat: { supportsReasoningEffort: true, thinkingFormat: 'qwen' } })
+    );
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning: { effort: 'low' },
+          reasoning_effort: 'low',
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.enable_thinking).toBe(true);
+    expect(result.payload.reasoning).toBeUndefined();
+    expect(result.payload.reasoning_effort).toBeUndefined();
+  });
+
+  test('leaves untranslated reasoning fields untouched when no intent is recognized', async () => {
+    // With model.reasoning disabled there is nothing to translate — the
+    // projection is a no-op passthrough and must NOT strip the field (it may
+    // be handled by the reactive unsupported-param strip-and-retry instead).
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(piModel({ reasoning: false }));
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning: { effort: 'high' },
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning).toEqual({ effort: 'high' });
+    expect(result.payload.reasoning_effort).toBeUndefined();
+  });
 });
 
 describe('matchUnsupportedParameter', () => {
@@ -263,6 +362,14 @@ describe('matchUnsupportedParameter', () => {
         '{"error":{"message":"Unsupported parameter: \'messages[0].name\'"}}'
       )
     ).toBe('messages.0.name');
+  });
+
+  test('extracts a backtick-quoted param name (Meta Model API error shape)', () => {
+    expect(
+      matchUnsupportedParameter(
+        '{"error":{"code":null,"message":"unknown parameter `reasoning`","param":"reasoning","type":"invalid_request_error"}}'
+      )
+    ).toBe('reasoning');
   });
 
   test('returns undefined when the body does not name an unsupported parameter', () => {

@@ -203,13 +203,22 @@ function projectOpenAiCompletionsAutoCompat(
   const mapped = mappedThinkingValue(model, reasoningEffort);
   const off = mappedOffValue(model);
 
+  // The switch below translated the client's reasoning intent into the
+  // target provider's dialect. Each case also DELETEs the OpenAI-style
+  // spellings the dialect does not consume (`reasoning` object and/or
+  // top-level `reasoning_effort`) so a strict upstream (the Meta Model API
+  // hard-400s on unknown fields) never receives the leftover untranslated
+  // notation alongside the translated one.
   switch (compat.thinkingFormat) {
     case 'zai':
       next.thinking = enabled ? { type: 'enabled', clear_thinking: false } : { type: 'disabled' };
       if (enabled && compat.supportsReasoningEffort && mapped) next.reasoning_effort = mapped;
+      delete next.reasoning;
       break;
     case 'qwen':
       next.enable_thinking = enabled;
+      delete next.reasoning;
+      delete next.reasoning_effort;
       break;
     case 'qwen-chat-template':
       next.chat_template_kwargs = {
@@ -217,29 +226,41 @@ function projectOpenAiCompletionsAutoCompat(
         enable_thinking: enabled,
         preserve_thinking: true,
       };
+      delete next.reasoning;
+      delete next.reasoning_effort;
       break;
     case 'chat-template':
       next.chat_template_kwargs = {
         ...(next.chat_template_kwargs ?? {}),
         ...resolveChatTemplateKwargs(model, options),
       };
+      delete next.reasoning;
+      delete next.reasoning_effort;
       break;
     case 'deepseek':
       next.thinking = enabled ? { type: 'enabled' } : { type: 'disabled' };
       if (enabled && compat.supportsReasoningEffort && mapped) next.reasoning_effort = mapped;
+      delete next.reasoning;
       break;
     case 'openrouter':
+      // Overwrites `reasoning` wholesale; stale top-level `reasoning_effort`
+      // is removed so OpenRouter's dialect is the single source of intent.
       next.reasoning = enabled ? { effort: mapped } : { effort: off ?? 'none' };
+      delete next.reasoning_effort;
       break;
     case 'ant-ling':
       if (enabled && mapped) next.reasoning = { effort: mapped };
+      delete next.reasoning_effort;
       break;
     case 'together':
+      // Together natively consumes BOTH notations — nothing to strip.
       next.reasoning = { enabled };
       if (enabled && compat.supportsReasoningEffort && mapped) next.reasoning_effort = mapped;
       break;
     case 'string-thinking':
       next.thinking = enabled ? mapped : (off ?? 'none');
+      delete next.reasoning;
+      delete next.reasoning_effort;
       break;
     default:
       if (enabled && compat.supportsReasoningEffort && mapped) {
@@ -247,6 +268,7 @@ function projectOpenAiCompletionsAutoCompat(
       } else if (!enabled && compat.supportsReasoningEffort && off) {
         next.reasoning_effort = off;
       }
+      delete next.reasoning;
       break;
   }
 
@@ -431,16 +453,17 @@ export function applyRegistryAutoCompat(
 // outbound payload and retries the SAME target.
 
 /**
- * Matches both `{"detail":"Unsupported parameter: X"}` and
- * `{"error":{"message":"Unknown parameter: 'X'"}}` shapes. The captured
- * group also matches dotted paths (e.g. `reasoning.summary`) and
- * bracket-notation paths (e.g. `messages[0].name`), since providers name
- * nested fields both ways. A capture that stopped at `[` would truncate
- * `messages[0].name` to `messages` — and the paired delete would then remove
- * the ENTIRE conversation from the retry payload.
+ * Matches `{"detail":"Unsupported parameter: X"}`, `{"error":{"message":
+ * "Unknown parameter: 'X'"}}`, and backtick-quoted shapes (e.g. the Meta
+ * Model API's `unknown parameter \`reasoning\``). The captured group also
+ * matches dotted paths (e.g. `reasoning.summary`) and bracket-notation paths
+ * (e.g. `messages[0].name`), since providers name nested fields both ways. A
+ * capture that stopped at `[` would truncate `messages[0].name` to `messages`
+ * — and the paired delete would then remove the ENTIRE conversation from the
+ * retry payload.
  */
 const UNSUPPORTED_PARAMETER_PATTERN =
-  /(?:unsupported|unknown) parameter[:\s]+['"]?([\w.[\]]+)['"]?/i;
+  /(?:unsupported|unknown) parameter[:\s]+['"`]?([\w.[\]]+)['"`]?/i;
 
 /**
  * Canonicalizes bracket-notation segments to dotted form
