@@ -14,8 +14,6 @@ const API_TYPE_ALIASES: Record<string, string[]> = {
   transcriptions: ['chat', 'gemini'],
   speech: ['chat', 'gemini'],
   images: ['chat', 'gemini'],
-  gemini: ['images', 'chat'],
-  openrouter: ['images', 'chat', 'gemini'],
 };
 
 function stripTrailingApiVersion(url: string): string {

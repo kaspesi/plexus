@@ -18,6 +18,7 @@ import { DebugManager } from '../observability/debug-manager';
 import { EmbeddingsTransformerFactory } from './embeddings-transformer-factory';
 import { ImageGenerationTransformerFactory } from './image-transformer-factory';
 import { selectTargetApiType } from '../providers/provider-api-selection';
+import { getApiBaseType } from '../../utils/api-format';
 import type { RetryAttemptRecord } from './dispatcher-types';
 
 function imageRoutingError(message: string): Error {
@@ -1040,7 +1041,21 @@ export class MediaDispatcher {
         const targetApiType = selectTargetApiType(route, 'images').targetApiType || 'chat';
         const transformer = ImageGenerationTransformerFactory.resolveTransformer(targetApiType);
         const requestWithModel = { ...request, model: route.model };
-        const baseUrl = host.resolveBaseUrl(route, targetApiType);
+        const targetBaseType = getApiBaseType(targetApiType);
+        const urlMap =
+          typeof route.config.api_base_url === 'object' && route.config.api_base_url !== null
+            ? (route.config.api_base_url as Record<string, string>)
+            : undefined;
+        const nativeTarget = targetBaseType === 'gemini' || targetBaseType === 'openrouter';
+        const hasNativeBaseUrl =
+          !urlMap ||
+          !!urlMap[targetApiType.toLowerCase()] ||
+          !!urlMap[targetBaseType] ||
+          !!urlMap.default;
+        const baseUrl = host.resolveBaseUrl(
+          route,
+          nativeTarget && hasNativeBaseUrl ? targetApiType : 'images'
+        );
         const url = `${baseUrl}${transformer.getEndpoint(requestWithModel)}`;
 
         const headers: Record<string, string> = {
