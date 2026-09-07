@@ -97,6 +97,21 @@ export function selectTargetApiType(
  * @returns Normalized base URL without trailing slash
  */
 export function resolveImageProviderBaseUrl(route: RouteResult, targetApiType: string): string {
+  const apiBaseUrl = route.config.api_base_url;
+  const targetBaseType = getApiBaseType(targetApiType);
+  const isOpenAiCompatibleTarget = ['chat', 'completions', 'openai', 'openai-images'].includes(
+    targetBaseType
+  );
+
+  if (
+    apiBaseUrl &&
+    typeof apiBaseUrl !== 'string' &&
+    isOpenAiCompatibleTarget &&
+    apiBaseUrl['openai-images']
+  ) {
+    return resolveProviderBaseUrl(route, 'openai-images');
+  }
+
   return resolveProviderBaseUrl(route, targetApiType);
 }
 

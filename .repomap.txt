@@ -1276,10 +1276,10 @@
   │ [function] probeStreamingStartWithStallCheck (line 295)
 
 📁 packages/backend/src/services/providers/provider-api-selection.ts:
-  │ [function] applyGeminiThinkingConfig (line 168)
+  │ [function] applyGeminiThinkingConfig (line 183)
   │ [function] getApiMetadata (line 23)
   │ [function] resolveImageProviderBaseUrl (line 99)
-  │ [function] resolveProviderBaseUrl (line 103)
+  │ [function] resolveProviderBaseUrl (line 118)
   │ [function] selectTargetApiType (line 32)
   │ [function] stripTrailingApiVersion (line 19)
 

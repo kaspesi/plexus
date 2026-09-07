@@ -93,6 +93,41 @@ describe('Dispatcher image translation', () => {
     expect(options.body.get('size')).toBe('1792x1024');
   });
 
+  test('prefers the dedicated OpenAI Images base URL over chat', async () => {
+    setConfigForTesting(
+      baseConfig(
+        'openai',
+        {
+          api_base_url: {
+            chat: 'https://chat.example.com/v1',
+            'openai-images': 'https://images.example.com/v1',
+          },
+          api_key: 'openai-key',
+          models: {
+            'gpt-image': {
+              type: 'image',
+              access_via: ['chat'],
+            },
+          },
+        },
+        'gpt-image'
+      )
+    );
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ created: 1, data: [{ b64_json: 'AA==' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await new Dispatcher().dispatchImageGenerations({
+      ...request,
+      input_references: undefined,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://images.example.com/v1/images/generations');
+  });
+
   test('does not let client provider options override the routed model', async () => {
     setConfigForTesting(
       baseConfig(
