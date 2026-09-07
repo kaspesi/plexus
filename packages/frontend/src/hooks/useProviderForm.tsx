@@ -16,6 +16,7 @@ const KNOWN_APIS = [
   'transcriptions',
   'speech',
   'images',
+  'openrouter',
   'responses',
   'ollama',
 ];
