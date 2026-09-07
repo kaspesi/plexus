@@ -881,7 +881,7 @@
   │ [function] cooldownMcpKey (line 108)
   │ [function] extractJsonRpcMethod (line 235)
   │ [function] extractJsonRpcMethods (line 226)
-  │ [function] extractToolName (line 244)
+  │ [function] extractToolName (line 333)
   │ [function] filterClientAuthHeaders (line 211)
   │ [function] filterHopByHopHeaders (line 155)
   │ [function] getActiveMcpKeys (line 70)
@@ -889,9 +889,12 @@
   │ [function] getMcpServerConfig (line 118)
   │ [function] injectMcpKeyAuth (line 51)
   │ [function] mergeUpstreamHeaders (line 181)
-  │ [function] proxyMcpRequest (line 264)
+  │ [function] proxyMcpRequest (line 353)
   │ [function] redactSensitiveHeaders (line 196)
+  │ [function] requestsToolsList (line 239)
+  │ [function] sanitizeToolsListTtlStream (line 272)
   │ [function] selectMcpKeyRoundRobin (line 41)
+  │ [function] stripZeroTtlFromToolsListResult (line 255)
   │ [function] validateServerName (line 143)
 
 📁 packages/backend/src/services/mcp-proxy/mcp-usage-storage.ts:
