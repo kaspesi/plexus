@@ -1288,7 +1288,7 @@ export class MediaDispatcher {
       host.emitRoutingUpdate(request.requestId, route);
 
       try {
-        const baseUrl = host.resolveBaseUrl(route, 'images');
+        const baseUrl = resolveImageProviderBaseUrl(route, 'openai-images');
         const url = `${baseUrl}/images/edits`;
 
         const headers: Record<string, string> = {};

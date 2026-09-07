@@ -14,9 +14,9 @@ function canonicalizeApiType(type: string): string {
 
 export function apiAccessToKey(access: ApiAccess): string {
   if (typeof access === 'string') return canonicalizeApiType(access);
-  const type = canonicalizeApiType(access.type);
+  const type = access.type.trim().toLowerCase();
   const subtype = access.subtype?.trim().toLowerCase();
-  return subtype ? `${type}:${subtype}` : type;
+  return subtype ? `${type}:${subtype}` : canonicalizeApiType(type);
 }
 
 export function getApiBaseType(apiType: string): string {

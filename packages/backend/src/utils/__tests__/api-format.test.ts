@@ -18,6 +18,12 @@ describe('API format helpers', () => {
     expect(apiAccessToKey('openrouter:web_search')).toBe('openrouter:web_search');
   });
 
+  test('preserves non-image structured subtypes', () => {
+    expect(apiAccessToKey({ type: 'openrouter', subtype: 'web_search' })).toBe(
+      'openrouter:web_search'
+    );
+  });
+
   test('canonicalizes structured subtypes', () => {
     expect(apiAccessToKey({ type: ' Responses ', subtype: ' Lite ' })).toBe('responses:lite');
     expect(getApiBaseType('responses:lite')).toBe('responses');

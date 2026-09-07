@@ -101,7 +101,23 @@ export function selectTargetApiType(
  * @returns Normalized base URL without trailing slash
  */
 export function resolveImageProviderBaseUrl(route: RouteResult, targetApiType: string): string {
-  return resolveProviderBaseUrl(route, targetApiType);
+  if (typeof route.config.api_base_url === 'string') {
+    return resolveProviderBaseUrl(route, targetApiType);
+  }
+
+  const urlMap = route.config.api_base_url as Record<string, string>;
+  const targetBaseType = getApiBaseType(targetApiType);
+  const isOpenAiCompatibleTarget = ['chat', 'completions', 'openai', 'images'].includes(
+    targetBaseType
+  );
+
+  if (isOpenAiCompatibleTarget && (urlMap['openai-images'] || urlMap.images)) {
+    return resolveProviderBaseUrl(route, 'openai-images');
+  }
+  return resolveProviderBaseUrl(
+    route,
+    targetApiType === 'images' ? 'openai-images' : targetApiType
+  );
 }
 
 export function resolveProviderBaseUrl(route: RouteResult, targetApiType: string): string {
