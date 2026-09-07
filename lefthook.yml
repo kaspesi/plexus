@@ -42,6 +42,10 @@ pre-commit:
         - "packages/backend/drizzle/migrations_pg/**"
       run: bunx biome format --write {staged_files} && git add {staged_files}
 
+    # --- Repo map: regenerate and stage before committing -------------------
+    repomap:
+      run: bun run generate:repomap && git add .repomap.txt
+
     # --- Biome: lint all sources ---------------------------------------------
     biome-lint:
       run: bunx biome lint .
@@ -78,8 +82,3 @@ pre-push:
       skip:
         - CI: "true"
       use_stdin: true # forwards git's pre-push ref lines to the script
-    "repomap.sh":
-      runner: bash
-      skip:
-        - CI: "true"
-      use_stdin: true
