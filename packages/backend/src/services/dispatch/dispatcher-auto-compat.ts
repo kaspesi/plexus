@@ -212,8 +212,9 @@ function projectOpenAiCompletionsAutoCompat(
   switch (compat.thinkingFormat) {
     case 'zai':
       next.thinking = enabled ? { type: 'enabled', clear_thinking: false } : { type: 'disabled' };
-      if (enabled && compat.supportsReasoningEffort && mapped) next.reasoning_effort = mapped;
       delete next.reasoning;
+      delete next.reasoning_effort;
+      if (enabled && compat.supportsReasoningEffort && mapped) next.reasoning_effort = mapped;
       break;
     case 'qwen':
       next.enable_thinking = enabled;
@@ -239,8 +240,9 @@ function projectOpenAiCompletionsAutoCompat(
       break;
     case 'deepseek':
       next.thinking = enabled ? { type: 'enabled' } : { type: 'disabled' };
-      if (enabled && compat.supportsReasoningEffort && mapped) next.reasoning_effort = mapped;
       delete next.reasoning;
+      delete next.reasoning_effort;
+      if (enabled && compat.supportsReasoningEffort && mapped) next.reasoning_effort = mapped;
       break;
     case 'openrouter':
       // Overwrites `reasoning` wholesale; stale top-level `reasoning_effort`
@@ -263,12 +265,13 @@ function projectOpenAiCompletionsAutoCompat(
       delete next.reasoning_effort;
       break;
     default:
+      delete next.reasoning;
+      delete next.reasoning_effort;
       if (enabled && compat.supportsReasoningEffort && mapped) {
         next.reasoning_effort = mapped;
       } else if (!enabled && compat.supportsReasoningEffort && off) {
         next.reasoning_effort = off;
       }
-      delete next.reasoning;
       break;
   }
 

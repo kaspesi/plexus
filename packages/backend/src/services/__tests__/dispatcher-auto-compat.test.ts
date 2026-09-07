@@ -298,6 +298,34 @@ describe('Dispatcher registry auto-compat', () => {
     expect(result.payload.reasoning_effort).toBeUndefined();
   });
 
+  test('strips stale reasoning_effort when the dialect cannot express it (zai)', async () => {
+    // zai with supportsReasoningEffort=false: the intent lands on `thinking`
+    // alone, and the client's untranslated `reasoning_effort` must be REMOVED
+    // — leaving it would resend an unsupported field to the strict upstream.
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(
+      piModel({ compat: { supportsReasoningEffort: false, thinkingFormat: 'zai' } })
+    );
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning_effort: 'medium',
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.thinking).toEqual({ type: 'enabled', clear_thinking: false });
+    expect(result.payload.reasoning_effort).toBeUndefined();
+    expect(result.payload.reasoning).toBeUndefined();
+  });
+
   test('leaves untranslated reasoning fields untouched when no intent is recognized', async () => {
     // With model.reasoning disabled there is nothing to translate — the
     // projection is a no-op passthrough and must NOT strip the field (it may
