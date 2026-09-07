@@ -21,7 +21,7 @@ OpenRouter-shaped JSON request
 ```
 
 The initial implementation covers buffered text-to-image and reference-image-conditioned generation
-against configured OpenAI-compatible image endpoints, the dedicated OpenRouter `/images` endpoint, and native Gemini image-generating models.
+against configured OpenAI Images-compatible image endpoints, the dedicated OpenRouter `/images` endpoint, and native Gemini image-generating models. The configured target API types are `openai-images`, `openrouter-images`, and `gemini`; legacy `images`/`openrouter` values are accepted as aliases.
 Preserve the existing `/v1/images/generations` JSON and `/v1/images/edits` multipart compatibility
 surfaces; they should converge on the same image IR rather than acquire separate provider pipelines.
 “OpenRouter-shaped” means `model`, `prompt`, and image options, **not** chat `messages`/`modalities` or
@@ -108,7 +108,7 @@ be dropped on Gemini.
 | Target | Request mapping | Response mapping |
 | --- | --- | --- |
 | OpenAI-compatible images | JSON `/images/generations` for text-only input; multipart `/images/edits` when a single reference requires editing input. Map supported image options according to the target's capabilities. Use bearer auth and let multipart serialization set its boundary. | Normalize `data[]` URL/base64 items, revised prompts, and reported usage. |
-| Dedicated OpenRouter images | `/images` relative to the configured OpenRouter API base. Rebuild the supported normalized fields and reference-image entries; do not forward the original body. Use bearer auth. | Normalize OpenRouter `data[]` and `usage` into the canonical image response. |
+| Dedicated OpenRouter images (`openrouter-images`) | `/images` relative to the configured OpenRouter API base. Rebuild the supported normalized fields and reference-image entries; do not forward the original body. Use bearer auth. | Normalize OpenRouter `data[]` and `usage` into the canonical image response. |
 | Native Gemini images | `/v1beta/models/{model}:generateContent`, with prompt and reference `inlineData` parts in `contents`; request image output via `generationConfig.responseModalities` and map ratio/resolution to `imageConfig.aspectRatio`/`imageSize` where supported. Use Gemini authentication. | Extract generated image `inlineData` parts and their MIME types; normalize `usageMetadata`. Do not treat text-only or safety-blocked responses as successful image generation. |
 
 Use image-specific OpenRouter and Gemini transformers. The existing chat builder is not an image capability layer,
@@ -145,7 +145,7 @@ are part of the implemented buffered phase.
 
 | File | Responsibility / implementation seam |
 | --- | --- |
-| `routes/inference/images.ts` | Ingress validation, OpenRouter-shaped parsing, compatibility multipart parsing, request context, and client response formatting for `/v1/images`, `/v1/images/generations`, and `/v1/images/edits`. |
+| `routes/inference/images.ts` | Ingress validation, OpenRouter-shaped parsing, compatibility multipart parsing, request context, and client response formatting for `/v1/images`, `/v1/images/generations`, and `/v1/images/edits`. The public incoming operation remains `images`; target protocol names are separate. |
 | `routes/inference/index.ts` | Keep image entrypoints within the existing authenticated route registration. |
 | `types/unified.ts` | Extend the current `UnifiedImageGeneration*` / `UnifiedImageEdit*` types into the canonical image contract, including references, output intent, MIME types, and normalized usage. |
 | `transformers/image.ts` and `transformers/index.ts` | Current OpenAI-only parser/builder/formatter and exports; retain compatibility entrypoints while separating inbound normalization from target mapping. |

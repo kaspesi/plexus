@@ -15,8 +15,8 @@ const KNOWN_APIS = [
   'embeddings',
   'transcriptions',
   'speech',
-  'images',
-  'openrouter',
+  'openai-images',
+  'openrouter-images',
   'responses',
   'ollama',
 ];
@@ -30,6 +30,19 @@ const getOAuthCheckerType = (oauthProvider?: string): string | null => {
     'github-copilot': 'copilot',
   };
   return map[oauthProvider] ?? null;
+};
+
+const normalizeApiBaseUrlMap = (apiBaseUrl: Record<string, string>): Record<string, string> => {
+  const normalized = { ...apiBaseUrl };
+  if (normalized.images && !normalized['openai-images']) {
+    normalized['openai-images'] = normalized.images;
+    delete normalized.images;
+  }
+  if (normalized.openrouter && !normalized['openrouter-images']) {
+    normalized['openrouter-images'] = normalized.openrouter;
+    delete normalized.openrouter;
+  }
+  return normalized;
 };
 
 const inferProviderTypes = (apiBaseUrl?: string | Record<string, string>): string[] => {
@@ -373,6 +386,16 @@ export function useProviderForm() {
       if (providerToSave.quotaChecker && !providerToSave.quotaChecker.type?.trim()) {
         providerToSave = { ...providerToSave, quotaChecker: undefined };
       }
+      if (
+        typeof providerToSave.apiBaseUrl === 'object' &&
+        providerToSave.apiBaseUrl !== null &&
+        !Array.isArray(providerToSave.apiBaseUrl)
+      ) {
+        providerToSave = {
+          ...providerToSave,
+          apiBaseUrl: normalizeApiBaseUrlMap(providerToSave.apiBaseUrl),
+        };
+      }
       await api.saveProvider(providerToSave, originalId || undefined);
       await loadData();
       setIsModalOpen(false);
@@ -555,7 +578,7 @@ export function useProviderForm() {
       editingProvider.apiBaseUrl !== null &&
       !Array.isArray(editingProvider.apiBaseUrl)
     ) {
-      return { ...(editingProvider.apiBaseUrl as Record<string, string>) };
+      return normalizeApiBaseUrlMap(editingProvider.apiBaseUrl as Record<string, string>);
     }
     if (typeof editingProvider.apiBaseUrl === 'string' && editingProvider.apiBaseUrl.trim()) {
       const inferredTypes = inferProviderTypes(editingProvider.apiBaseUrl);
@@ -572,7 +595,7 @@ export function useProviderForm() {
       if (types.includes(apiType) && types.length === 1) return editingProvider.apiBaseUrl;
       return '';
     }
-    return (editingProvider.apiBaseUrl as any)?.[apiType] || '';
+    return getApiBaseUrlMap()[apiType] || '';
   };
 
   const addApiBaseUrlEntry = () => {

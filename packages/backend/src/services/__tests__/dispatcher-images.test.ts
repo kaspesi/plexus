@@ -62,7 +62,7 @@ describe('Dispatcher image translation', () => {
           models: {
             'gpt-image': {
               type: 'image',
-              access_via: ['chat'],
+              access_via: ['openai-images'],
             },
           },
         },
@@ -83,7 +83,7 @@ describe('Dispatcher image translation', () => {
     const response = await new Dispatcher().dispatchImageGenerations(request);
 
     expect(response.data).toEqual([{ b64_json: 'AA==' }]);
-    expect(response.plexus?.targetApiType).toBe('chat');
+    expect(response.plexus?.targetApiType).toBe('openai-images');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0]!;
     expect(url).toBe('https://api.example.com/v1/images/edits');
@@ -103,7 +103,7 @@ describe('Dispatcher image translation', () => {
           models: {
             'gpt-image': {
               type: 'image',
-              access_via: ['chat'],
+              access_via: ['openai-images'],
             },
           },
         },
@@ -151,7 +151,7 @@ describe('Dispatcher image translation', () => {
           models: {
             'openrouter-image': {
               type: 'image',
-              access_via: ['openrouter'],
+              access_via: ['openrouter-images'],
             },
           },
         },
@@ -175,7 +175,7 @@ describe('Dispatcher image translation', () => {
     });
 
     expect(response.data).toEqual([{ b64_json: 'AA==' }]);
-    expect(response.plexus?.targetApiType).toBe('openrouter');
+    expect(response.plexus?.targetApiType).toBe('openrouter-images');
     const [url, options] = fetchMock.mock.calls[0]!;
     expect(url).toBe('https://openrouter.ai/api/v1/images');
     expect(options.headers.Authorization).toBe('Bearer openrouter-key');

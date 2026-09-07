@@ -35,8 +35,8 @@ const API_ACCESS_OPTIONS = [
 
 const IMAGE_API_ACCESS_OPTIONS = [
   { type: 'chat', label: 'OpenAI-compatible' },
-  { type: 'images', label: 'OpenAI Images' },
-  { type: 'openrouter', label: 'OpenRouter Images' },
+  { type: 'openai-images', label: 'OpenAI Images' },
+  { type: 'openrouter-images', label: 'OpenRouter Images' },
   { type: 'gemini', label: 'Gemini Images' },
 ] as const;
 
@@ -62,10 +62,14 @@ const getApiBadgeStyle = (apiType: string): React.CSSProperties => {
       return { backgroundColor: '#a855f7', color: 'white', border: 'none' };
     case 'speech':
       return { backgroundColor: '#f97316', color: 'white', border: 'none' };
+    case 'openai-images':
+      return { backgroundColor: '#d946ef', color: 'white', border: 'none' };
     case 'images':
       return { backgroundColor: '#d946ef', color: 'white', border: 'none' };
     case 'responses':
       return { backgroundColor: '#06b6d4', color: 'white', border: 'none' };
+    case 'openrouter-images':
+      return { backgroundColor: '#7c3aed', color: 'white', border: 'none' };
     case 'openrouter':
       return { backgroundColor: '#7c3aed', color: 'white', border: 'none' };
     case 'ollama':
@@ -382,7 +386,10 @@ export function ProviderModelsEditor({
                                 else if (newType === 'speech')
                                   updateModelConfig(mId, { type: newType, access_via: ['speech'] });
                                 else if (newType === 'image')
-                                  updateModelConfig(mId, { type: newType, access_via: ['images'] });
+                                  updateModelConfig(mId, {
+                                    type: newType,
+                                    access_via: ['openai-images'],
+                                  });
                                 else updateModelConfig(mId, { type: newType });
                               }}
                             >

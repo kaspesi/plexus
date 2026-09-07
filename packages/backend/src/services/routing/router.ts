@@ -16,6 +16,12 @@ import { EnrichedModelTarget } from './selectors/base';
 import { StickySessionManager } from './sticky-session-manager';
 import { getApiBaseType, isApiSubtype, normalizeApiAccessList } from '../../utils/api-format';
 
+function isImageApiType(apiType: string): boolean {
+  return ['chat', 'gemini', 'openai-images', 'openrouter-images', 'images', 'openrouter'].includes(
+    getApiBaseType(apiType)
+  );
+}
+
 export interface RouteResult {
   provider: string;
   model: string;
@@ -215,9 +221,7 @@ async function filterGroupTargets(
         modelSpecificTypes && modelSpecificTypes.length > 0
           ? normalizeApiAccessList(modelSpecificTypes)
           : providerTypes;
-      const supportsImageProtocol = availableTypes.some((type) =>
-        ['chat', 'gemini', 'images', 'openrouter'].includes(getApiBaseType(type))
-      );
+      const supportsImageProtocol = availableTypes.some((type) => isImageApiType(type));
 
       return supportsImageProtocol;
     });
@@ -252,7 +256,11 @@ async function filterGroupTargets(
         modelSpecificTypes && modelSpecificTypes.length > 0
           ? normalizeApiAccessList(modelSpecificTypes)
           : providerTypes;
-      return availableTypes.some((t) => t.toLowerCase() === normalizedIncoming);
+      return availableTypes.some(
+        (t) =>
+          t.toLowerCase() === normalizedIncoming ||
+          (normalizedIncoming === 'images' && isImageApiType(t))
+      );
     });
   };
 

@@ -13,7 +13,9 @@ const API_TYPE_ALIASES: Record<string, string[]> = {
   embeddings: ['chat', 'gemini'],
   transcriptions: ['chat', 'gemini'],
   speech: ['chat', 'gemini'],
-  images: ['chat', 'gemini'],
+  images: ['openai-images', 'images', 'chat', 'gemini'],
+  'openai-images': ['images', 'chat', 'gemini'],
+  'openrouter-images': ['openrouter', 'images', 'chat', 'gemini'],
 };
 
 function stripTrailingApiVersion(url: string): string {
@@ -58,7 +60,14 @@ export function selectTargetApiType(
   if (incomingApiType) {
     const incoming = incomingApiType.toLowerCase();
     // Case-insensitive match
-    const match = availableTypes.find((t: string) => t.toLowerCase() === incoming);
+    const match = availableTypes.find(
+      (t: string) =>
+        t.toLowerCase() === incoming ||
+        (incoming === 'images' &&
+          ['chat', 'gemini', 'openai-images', 'openrouter-images', 'images', 'openrouter'].includes(
+            getApiBaseType(t)
+          ))
+    );
     if (match) {
       targetApiType = match;
       selectionReason = `matched incoming request type '${incoming}'`;
@@ -92,28 +101,17 @@ export function selectTargetApiType(
  * @returns Normalized base URL without trailing slash
  */
 export function resolveImageProviderBaseUrl(route: RouteResult, targetApiType: string): string {
-  const apiBaseUrl = route.config.api_base_url;
-  if (!apiBaseUrl || typeof apiBaseUrl === 'string') {
-    return resolveProviderBaseUrl(route, targetApiType);
-  }
-
-  const urlMap = apiBaseUrl as Record<string, string>;
-  const targetBaseType = getApiBaseType(targetApiType);
-  const isNativeImageTarget = targetBaseType === 'gemini' || targetBaseType === 'openrouter';
-  const hasNativeBaseUrl =
-    !!urlMap[targetApiType.toLowerCase()] || !!urlMap[targetBaseType] || !!urlMap.default;
-
-  if (!isNativeImageTarget || !hasNativeBaseUrl) {
-    return resolveProviderBaseUrl(route, 'images');
-  }
   return resolveProviderBaseUrl(route, targetApiType);
 }
 
 export function resolveProviderBaseUrl(route: RouteResult, targetApiType: string): string {
   let rawBaseUrl: string;
 
-  if (typeof route.config.api_base_url === 'string') {
-    rawBaseUrl = route.config.api_base_url;
+  if (!route.config.api_base_url || typeof route.config.api_base_url === 'string') {
+    rawBaseUrl = route.config.api_base_url || '';
+    if (!rawBaseUrl) {
+      throw new Error(`No base URL configured for api type '${targetApiType}'.`);
+    }
   } else {
     // It's a record/map
     const urlMap = route.config.api_base_url;

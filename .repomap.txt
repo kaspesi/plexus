@@ -14,21 +14,21 @@
   │ [function] reEncryptNullable (line 71)
 
 📁 packages/backend/src/config.ts:
-  │ [function] assertNoAliasRefCycles (line 393)
-  │ [function] buildProviderQuotaConfigs (line 1035)
-  │ [function] findDuplicateAdditionalAliases (line 445)
-  │ [function] findDuplicateAliasTargets (line 366)
-  │ [function] getConfig (line 1103)
-  │ [function] getDatabaseConfig (line 1166)
-  │ [function] getProviderTypes (line 868)
-  │ [function] hydrateConfig (line 931)
-  │ [function] isKeyDisabled (line 851)
-  │ [function] isOAuthProviderConfig (line 909)
-  │ [function] isValidUrlOrOAuth (line 899)
-  │ [function] migrateOAuthAccounts (line 983)
-  │ [function] normalizeKeyConfig (line 735)
-  │ [function] setConfigForTesting (line 1128)
-  │ [function] validateConfig (line 924)
+  │ [function] assertNoAliasRefCycles (line 394)
+  │ [function] buildProviderQuotaConfigs (line 1038)
+  │ [function] findDuplicateAdditionalAliases (line 446)
+  │ [function] findDuplicateAliasTargets (line 367)
+  │ [function] getConfig (line 1106)
+  │ [function] getDatabaseConfig (line 1169)
+  │ [function] getProviderTypes (line 869)
+  │ [function] hydrateConfig (line 934)
+  │ [function] isKeyDisabled (line 852)
+  │ [function] isOAuthProviderConfig (line 912)
+  │ [function] isValidUrlOrOAuth (line 902)
+  │ [function] migrateOAuthAccounts (line 986)
+  │ [function] normalizeKeyConfig (line 736)
+  │ [function] setConfigForTesting (line 1131)
+  │ [function] validateConfig (line 927)
 
 📁 packages/backend/src/db/client.ts:
   │ [function] closeDatabase (line 247)
@@ -654,7 +654,7 @@
 📁 packages/backend/src/services/dispatch/image-transformer-factory.ts:
   │ [class] ImageGenerationTransformerFactory (line 11)
   │ [method] getTransformer (line 12)
-  │ [method] resolveTransformer (line 30)
+  │ [method] resolveTransformer (line 32)
 
 📁 packages/backend/src/services/dispatch/media-dispatcher.ts:
   │ [interface] MediaDispatchHost (line 123)
@@ -1276,12 +1276,12 @@
   │ [function] probeStreamingStartWithStallCheck (line 295)
 
 📁 packages/backend/src/services/providers/provider-api-selection.ts:
-  │ [function] applyGeminiThinkingConfig (line 174)
-  │ [function] getApiMetadata (line 23)
-  │ [function] resolveImageProviderBaseUrl (line 94)
-  │ [function] resolveProviderBaseUrl (line 112)
-  │ [function] selectTargetApiType (line 32)
-  │ [function] stripTrailingApiVersion (line 19)
+  │ [function] applyGeminiThinkingConfig (line 172)
+  │ [function] getApiMetadata (line 25)
+  │ [function] resolveImageProviderBaseUrl (line 103)
+  │ [function] resolveProviderBaseUrl (line 107)
+  │ [function] selectTargetApiType (line 34)
+  │ [function] stripTrailingApiVersion (line 21)
 
 📁 packages/backend/src/services/providers/provider-cooldown.ts:
   │ [function] parseCooldownDurationForProvider (line 30)
@@ -1566,18 +1566,19 @@
   │ [function] resolveRouteCandidates (line 16)
 
 📁 packages/backend/src/services/routing/router.ts:
-  │ [interface] RouteResult (line 19)
-  │ [class] Router (line 448)
-  │ [function] buildGroupCandidates (line 371)
-  │ [function] dedupeCandidates (line 359)
-  │ [function] filterGroupTargets (line 55)
-  │ [function] findAlias (line 39)
-  │ [method] resolve (line 549)
-  │ [method] resolveCandidates (line 449)
-  │ [method] resolveDirect (line 641)
-  │ [function] selectOrderedTargets (line 323)
-  │ [function] tryParseDirectGroup (line 28)
-  │ [function] withVisited (line 353)
+  │ [interface] RouteResult (line 25)
+  │ [class] Router (line 456)
+  │ [function] buildGroupCandidates (line 379)
+  │ [function] dedupeCandidates (line 367)
+  │ [function] filterGroupTargets (line 61)
+  │ [function] findAlias (line 45)
+  │ [function] isImageApiType (line 19)
+  │ [method] resolve (line 557)
+  │ [method] resolveCandidates (line 457)
+  │ [method] resolveDirect (line 649)
+  │ [function] selectOrderedTargets (line 331)
+  │ [function] tryParseDirectGroup (line 34)
+  │ [function] withVisited (line 361)
 
 📁 packages/backend/src/services/routing/scope-match.ts:
   │ [interface] ScopeLists (line 15)
@@ -2160,11 +2161,12 @@
 
 📁 packages/backend/src/utils/api-format.ts:
   │ [interface] ApiFormat (line 1)
-  │ [function] apiAccessToKey (line 8)
-  │ [function] getApiBaseType (line 21)
-  │ [function] getApiSubtype (line 25)
-  │ [function] isApiSubtype (line 31)
-  │ [function] normalizeApiAccessList (line 16)
+  │ [function] apiAccessToKey (line 15)
+  │ [function] canonicalizeApiAccessKey (line 8)
+  │ [function] getApiBaseType (line 28)
+  │ [function] getApiSubtype (line 32)
+  │ [function] isApiSubtype (line 38)
+  │ [function] normalizeApiAccessList (line 23)
 
 📁 packages/backend/src/utils/auth.ts:
   │ [interface] PlexusApiKeyAuthResult (line 68)
@@ -2420,13 +2422,14 @@
 
 📁 packages/frontend/src/lib/apiFormats.ts:
   │ [interface] ApiFormat (line 1)
-  │ [function] apiAccessToKey (line 8)
-  │ [function] formatApiTypeLabel (line 46)
-  │ [function] getApiBaseType (line 15)
-  │ [function] getApiSubtype (line 19)
-  │ [function] hasApiAccess (line 25)
-  │ [function] normalizeApiAccessList (line 42)
-  │ [function] toggleApiAccess (line 30)
+  │ [function] apiAccessToKey (line 15)
+  │ [function] canonicalizeApiType (line 8)
+  │ [function] formatApiTypeLabel (line 53)
+  │ [function] getApiBaseType (line 22)
+  │ [function] getApiSubtype (line 26)
+  │ [function] hasApiAccess (line 32)
+  │ [function] normalizeApiAccessList (line 49)
+  │ [function] toggleApiAccess (line 37)
 
 📁 packages/frontend/src/lib/currency.ts:
   │ [function] fetchRates (line 144)

@@ -13,10 +13,12 @@ export class ImageGenerationTransformerFactory {
     switch (getApiBaseType(providerType)) {
       case 'gemini':
         return new GeminiImageTransformer();
+      case 'openrouter-images':
       case 'openrouter':
         return new OpenRouterImageTransformer();
       case 'chat':
       case 'completions':
+      case 'openai-images':
       case 'images':
       case 'openai':
         return new ImageTransformer();

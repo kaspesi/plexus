@@ -6,7 +6,7 @@ import type { ImageGenerationTransformer } from '../../types/image-transformer';
 import { ImageRequestValidationError, normalizeImageUsage } from '../image';
 
 export class OpenRouterImageTransformer implements ImageGenerationTransformer {
-  readonly name = 'openrouter';
+  readonly name = 'openrouter-images';
   readonly defaultEndpoint = '/images';
 
   getEndpoint(request: UnifiedImageGenerationRequest): string {
