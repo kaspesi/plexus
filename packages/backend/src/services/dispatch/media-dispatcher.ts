@@ -18,6 +18,7 @@ import { DebugManager } from '../observability/debug-manager';
 import { EmbeddingsTransformerFactory } from './embeddings-transformer-factory';
 import { ImageGenerationTransformerFactory } from './image-transformer-factory';
 import { selectTargetApiType } from '../providers/provider-api-selection';
+import { getApiBaseType } from '../../utils/api-format';
 import type { RetryAttemptRecord } from './dispatcher-types';
 
 function imageRoutingError(message: string): Error {
@@ -1040,9 +1041,10 @@ export class MediaDispatcher {
         const targetApiType = selectTargetApiType(route, 'images').targetApiType || 'chat';
         const transformer = ImageGenerationTransformerFactory.resolveTransformer(targetApiType);
         const requestWithModel = { ...request, model: route.model };
+        const targetBaseType = getApiBaseType(targetApiType);
         const baseUrl = host.resolveBaseUrl(
           route,
-          targetApiType === 'openrouter' ? targetApiType : 'images'
+          targetBaseType === 'openrouter' || targetBaseType === 'gemini' ? targetApiType : 'images'
         );
         const url = `${baseUrl}${transformer.getEndpoint(requestWithModel)}`;
 
