@@ -457,6 +457,33 @@ describe('Dispatcher registry auto-compat', () => {
     expect(result.payload.reasoning_effort).toBeUndefined();
   });
 
+  test('default format ignores a malformed non-object reasoning value as intent source', async () => {
+    // A string `reasoning` is not a recognized intent source for the
+    // extractor, so reasoning_effort remains the authoritative intent and
+    // passes through when provider support is unknown. (The malformed field
+    // itself still goes upstream on this path; the reactive strip-and-retry
+    // is the guard against a strict upstream rejecting it.)
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(piModel({ compat: {} }));
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning: 'high', // malformed — extractor skips non-objects
+          reasoning_effort: 'medium',
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning_effort).toBe('medium');
+  });
+
   test('leaves untranslated reasoning fields untouched when no intent is recognized', async () => {
     // With model.reasoning disabled there is nothing to translate — the
     // projection is a no-op passthrough and must NOT strip the field (it may
