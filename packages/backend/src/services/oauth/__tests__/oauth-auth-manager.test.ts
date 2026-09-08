@@ -229,6 +229,31 @@ describe('OAuthAuthManager', () => {
     await expect(Promise.all([first, second])).resolves.toEqual(['new-access', 'new-access']);
   });
 
+  it('propagates cancellation when joining an account refresh already in flight', async () => {
+    let resolveRefresh: ((value: typeof refreshedCredentials) => void) | undefined;
+    mocks.refresh.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        })
+    );
+    const manager = await createManager();
+
+    const first = manager.getApiKey('anthropic', 'personal', { refreshIfOlderThanMs: 0 });
+    await vi.waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
+
+    const controller = new AbortController();
+    const second = manager.getApiKey('anthropic', 'personal', {
+      refreshIfOlderThanMs: 0,
+      signal: controller.signal,
+    });
+    controller.abort(new DOMException('Request aborted', 'AbortError'));
+
+    await expect(second).rejects.toMatchObject({ name: 'AbortError' });
+    resolveRefresh?.(refreshedCredentials);
+    await expect(first).resolves.toBe('new-access');
+  });
+
   it('does not proactively refresh without a refresh cadence', async () => {
     const manager = await createManager();
 

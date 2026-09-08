@@ -277,7 +277,7 @@ export class OAuthAuthManager {
         try {
           const existingRefresh = this.refreshPromises.get(refreshKey);
           if (existingRefresh) {
-            current = await existingRefresh;
+            current = await waitForPromise(existingRefresh, signal);
           } else {
             const refreshPromise = this.refreshCredentials(
               provider,
