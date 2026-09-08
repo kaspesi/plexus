@@ -1,0 +1,103 @@
+name: Cora AI Code Review
+run-name: "Cora Review: PR #${{ github.event.pull_request.number }}"
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, ready_for_review, synchronize]
+
+concurrency:
+  group: cora-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  cora-review:
+    name: Cora Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check whether Cora should run
+        id: preflight
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const trustedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+
+            // Load trusted community contributors from repo file
+            const trustedUsers = new Set();
+            try {
+              const { data } = await github.rest.repos.getContent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: '.github/workflows/trusted-contributors',
+              });
+              const content = Buffer.from(data.content, 'base64').toString('utf8');
+              for (const line of content.split('\n')) {
+                const username = line.trim();
+                if (username) trustedUsers.add(username);
+              }
+            } catch {
+              // File not found or unreadable — treat as empty list
+            }
+
+            const pull = context.payload.pull_request;
+            let shouldRun = false;
+            let reason = '';
+
+            if (pull.draft) {
+              reason = 'Skipping draft PR until it is marked ready for review';
+            } else if (pull.user.login === 'github-actions[bot]') {
+              shouldRun = true;
+              reason = 'Trusted PR author: github-actions[bot]';
+            } else if (trustedAssociations.has(pull.author_association)) {
+              shouldRun = true;
+              reason = `Trusted PR author association: ${pull.author_association}`;
+            } else if (trustedUsers.has(pull.user.login)) {
+              shouldRun = true;
+              reason = `Trusted community member: ${pull.user.login}`;
+            } else {
+              reason = `Skipping automatic run for external PR author association: ${pull.author_association}`;
+            }
+
+            core.info(reason);
+            core.setOutput('should_run', String(shouldRun));
+
+      - name: Checkout PR head
+        if: steps.preflight.outputs.should_run == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Normalize LLM base URL
+        if: steps.preflight.outputs.should_run == 'true'
+        id: baseurl
+        env:
+          LLM_API_HOST: ${{ secrets.LLM_API_HOST }}
+        run: |
+          base="${LLM_API_HOST%/}"
+          case "$base" in
+            */v1) ;;
+            *) base="$base/v1" ;;
+          esac
+          echo "url=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Run Cora AI Code Review
+        if: steps.preflight.outputs.should_run == 'true'
+        uses: codecoradev/cora-review-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cora-api-key: ${{ secrets.LLM_API_KEY }}
+          cora-base-url: ${{ steps.baseurl.outputs.url }}
+          cora-model: ${{ vars.LLM_MODEL_ID }}
+          base-branch: origin/main
+
+      - name: Log skipped Cora run
+        if: steps.preflight.outputs.should_run != 'true'
+        run: echo "${{ steps.preflight.outputs.reason }}"
