@@ -74,17 +74,3 @@ pre-commit:
     backend-tests:
       glob: "packages/backend/src/**"
       run: bun run test
-
-pre-push:
-  # Local review hook placeholder — also skipped in CI.
-  skip:
-    - CI: "true"
-
-  # Scripts avoid Lefthook's @{push}-based file heuristic, which can skip
-  # commands for upstream-less branches and worktrees.
-  scripts:
-    "pr-agent-review.sh":
-      runner: bash
-      skip:
-        - CI: "true"
-      use_stdin: true # forwards git's pre-push ref lines to the script
