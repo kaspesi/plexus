@@ -174,6 +174,7 @@ function shouldDropTemperature(intent: GenerationIntent, options: Record<string,
 
 function projectOpenAiCompletionsAutoCompat(
   payload: Record<string, any>,
+  request: UnifiedChatRequest,
   model: any,
   intent: GenerationIntent,
   options: Record<string, any>
@@ -205,11 +206,14 @@ function projectOpenAiCompletionsAutoCompat(
   // A client-side `reasoning` object is the AUTHORITATIVE intent source
   // (extractReasoningIntent checks it before reasoning_effort), so when it is
   // present a leftover reasoning_effort may contradict the intent we are about
-  // to translate — count it as stale no matter what the branch writes. A
-  // malformed non-object `reasoning` is IGNORED by the extractor, so it never
-  // drove the intent and must not make the effort look stale.
+  // to translate — count it as stale no matter what the branch writes. Mirror
+  // the extractor's nullish fallback to request.reasoning; malformed non-object
+  // values remain ignored and must not make the effort look stale.
+  const resolvedReasoning = next.reasoning ?? request.reasoning;
   const hadReasoningObject =
-    next.reasoning != null && typeof next.reasoning === 'object' && !Array.isArray(next.reasoning);
+    resolvedReasoning != null &&
+    typeof resolvedReasoning === 'object' &&
+    !Array.isArray(resolvedReasoning);
 
   // The switch below translated the client's reasoning intent into the
   // target provider's dialect. Each case also DELETEs the OpenAI-style
@@ -449,7 +453,13 @@ export function applyRegistryAutoCompat(
   } else if (api === 'google-generative-ai' || api === 'google-generative-ai-vertex') {
     nextPayload = projectGeminiAutoCompat(providerPayload, intent, options);
   } else {
-    nextPayload = projectOpenAiCompletionsAutoCompat(providerPayload, piAiModel, intent, options);
+    nextPayload = projectOpenAiCompletionsAutoCompat(
+      providerPayload,
+      request,
+      piAiModel,
+      intent,
+      options
+    );
   }
 
   logger.debug(`Registry auto-compat applied for ${route.provider}/${route.model}`, {
