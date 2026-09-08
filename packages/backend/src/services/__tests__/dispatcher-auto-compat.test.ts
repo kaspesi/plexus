@@ -431,6 +431,32 @@ describe('Dispatcher registry auto-compat', () => {
     expect(result.payload.reasoning).toBeUndefined();
   });
 
+  test('default format drops stale reasoning_effort that contradicts a recognized reasoning object', async () => {
+    // Client sent BOTH fields with conflicting values: reasoning.enabled=false
+    // is authoritative (checked before reasoning_effort), so after deleting the
+    // reasoning object the surviving 'high' effort would reverse the intent.
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(piModel({ compat: {} }));
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning: { enabled: false },
+          reasoning_effort: 'high',
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning).toBeUndefined();
+    expect(result.payload.reasoning_effort).toBeUndefined();
+  });
+
   test('leaves untranslated reasoning fields untouched when no intent is recognized', async () => {
     // With model.reasoning disabled there is nothing to translate — the
     // projection is a no-op passthrough and must NOT strip the field (it may

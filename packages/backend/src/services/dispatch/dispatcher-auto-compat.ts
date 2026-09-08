@@ -202,6 +202,11 @@ function projectOpenAiCompletionsAutoCompat(
 
   const mapped = mappedThinkingValue(model, reasoningEffort);
   const off = mappedOffValue(model);
+  // A client-side `reasoning` object is the AUTHORITATIVE intent source
+  // (extractReasoningIntent checks it before reasoning_effort), so when it is
+  // present a leftover reasoning_effort may contradict the intent we are about
+  // to translate — count it as stale no matter what the branch writes.
+  const hadReasoningObject = next.reasoning !== undefined;
 
   // The switch below translated the client's reasoning intent into the
   // target provider's dialect. Each case also DELETEs the OpenAI-style
@@ -275,11 +280,14 @@ function projectOpenAiCompletionsAutoCompat(
         next.reasoning_effort = mapped;
       } else if (!enabled && compat.supportsReasoningEffort && off) {
         next.reasoning_effort = off;
-      } else if (compat.supportsReasoningEffort === false) {
-        // Dialect provably cannot express the effort — strip rather than
-        // leak. When support is merely UNKNOWN (undefined) the client's
-        // reasoning_effort passes through: this branch IS the native
-        // OpenAI dialect, where the field stands a good chance of working.
+      } else if (compat.supportsReasoningEffort === false || hadReasoningObject) {
+        // Strip when the dialect provably lacks support, or when a translated
+        // reasoning object was the authoritative intent (a surviving
+        // reasoning_effort could contradict it).
+        // When support is merely UNKNOWN and no reasoning object was deleted,
+        // reasoning_effort was itself the intent source — pass it through:
+        // this branch IS the native OpenAI dialect, where the field stands a
+        // good chance of working.
         delete next.reasoning_effort;
       }
       break;
