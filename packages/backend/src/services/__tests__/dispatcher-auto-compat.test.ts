@@ -484,6 +484,31 @@ describe('Dispatcher registry auto-compat', () => {
     expect(result.payload.reasoning_effort).toBe('medium');
   });
 
+  test('array-valued reasoning is not a recognized intent source', async () => {
+    // `typeof [] === 'object'` would otherwise mark this as an authoritative
+    // reasoning object; array values must pass through the same way as other
+    // malformed values without making a valid reasoning_effort look stale.
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(piModel({ compat: {} }));
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning: [],
+          reasoning_effort: 'medium',
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning_effort).toBe('medium');
+  });
+
   test('leaves untranslated reasoning fields untouched when no intent is recognized', async () => {
     // With model.reasoning disabled there is nothing to translate — the
     // projection is a no-op passthrough and must NOT strip the field (it may

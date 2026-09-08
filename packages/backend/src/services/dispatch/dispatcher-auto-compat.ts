@@ -208,7 +208,8 @@ function projectOpenAiCompletionsAutoCompat(
   // to translate — count it as stale no matter what the branch writes. A
   // malformed non-object `reasoning` is IGNORED by the extractor, so it never
   // drove the intent and must not make the effort look stale.
-  const hadReasoningObject = next.reasoning != null && typeof next.reasoning === 'object';
+  const hadReasoningObject =
+    next.reasoning != null && typeof next.reasoning === 'object' && !Array.isArray(next.reasoning);
 
   // The switch below translated the client's reasoning intent into the
   // target provider's dialect. Each case also DELETEs the OpenAI-style
