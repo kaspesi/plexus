@@ -115,7 +115,7 @@ jobs:
               sarif = null;
             }
 
-            const results = sarif?.runs?.[0]?.results ?? [];
+            const results = (sarif?.runs ?? []).flatMap((run) => run.results ?? []);
             const fallback = results.length === 1
               && results[0].level === 'warning'
               && (results[0].message?.text ?? '').toLowerCase().includes('could not complete');
@@ -181,7 +181,7 @@ jobs:
 
           source = Path('cora-results.sarif')
           destination = Path('cora-results.github.sarif')
-          has_results = False
+          has_sarif = False
           excluded = 0
 
           def has_source_location(result):
@@ -210,8 +210,9 @@ jobs:
           except (FileNotFoundError, json.JSONDecodeError):
               sarif = None
 
-          if sarif:
-              for run in sarif.get('runs', []):
+          if isinstance(sarif, dict) and isinstance(sarif.get('runs'), list):
+              has_sarif = True
+              for run in sarif['runs']:
                   results = run.get('results', [])
                   valid_results = []
                   for result in results:
@@ -220,17 +221,16 @@ jobs:
                       else:
                           excluded += 1
                   run['results'] = valid_results
-                  has_results = has_results or bool(valid_results)
               destination.write_text(json.dumps(sarif))
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'has_results={str(has_results).lower()}\n')
+              output.write(f'has_sarif={str(has_sarif).lower()}\n')
           if excluded:
               print(f'::notice::Excluded {excluded} Cora finding(s) without a source location from Code Scanning; they remain in the PR comment.')
           PY
 
       - name: Upload Cora SARIF to GitHub Code Scanning
-        if: always() && steps.cora-sarif.outputs.has_results == 'true'
+        if: always() && steps.cora-sarif.outputs.has_sarif == 'true'
         uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           sarif_file: cora-results.github.sarif
