@@ -60,6 +60,7 @@ export interface UnifiedToolFunction {
     $schema?: string;
   };
   parametersJsonSchema?: any; // Newer format supporting full JSON Schema (anyOf, oneOf, const)
+  strict?: boolean;
 }
 
 export interface UnifiedTool {
