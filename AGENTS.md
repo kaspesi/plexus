@@ -20,6 +20,7 @@ This file is a **guardrail**, not general documentation.
 - **NEVER** use `--no-verify` or `LEFTHOOK=0` without user permission.
 - **NEVER** edit or manually create migration files.
 - **NEVER** produce implementation or summary documents unless specifically requested.
+- **NEVER** run two Plexus instances against the same OAuth credential/grant. A refresh-token chain belongs to exactly one live process: providers use single-use rotating refresh tokens, so a second instance sharing the same token rotates and revokes it, 401-ing the whole account pool (caused a full opus outage 2026-08-18). If you must run a second instance, give it its **own** separate `oauth login` (distinct grant) or point it at **API-key-only providers** — never copy one refresh token into two running processes. In-process refresh coalescing gives zero cross-process protection.
 - **DEBUGGING** Plexus instances: read and use the `plexus-cli` skill. The worktree `.env` contains the relevant staging configuration. When the user specifies `staging`, use `PLEXUS_STAGING_URL` for the staging URL and `PLEXUS_ADMIN_KEY` for the admin key.
 - **AVOID** searching library type definitions for documentation. Use context/search skills first when available.
 - **ASK** when requirements are ambiguous.
