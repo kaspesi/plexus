@@ -271,11 +271,16 @@ function projectOpenAiCompletionsAutoCompat(
       break;
     default:
       delete next.reasoning;
-      delete next.reasoning_effort;
       if (enabled && compat.supportsReasoningEffort && mapped) {
         next.reasoning_effort = mapped;
       } else if (!enabled && compat.supportsReasoningEffort && off) {
         next.reasoning_effort = off;
+      } else if (compat.supportsReasoningEffort === false) {
+        // Dialect provably cannot express the effort — strip rather than
+        // leak. When support is merely UNKNOWN (undefined) the client's
+        // reasoning_effort passes through: this branch IS the native
+        // OpenAI dialect, where the field stands a good chance of working.
+        delete next.reasoning_effort;
       }
       break;
   }

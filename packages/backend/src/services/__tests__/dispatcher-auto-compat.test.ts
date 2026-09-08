@@ -374,6 +374,63 @@ describe('Dispatcher registry auto-compat', () => {
     expect(result.payload.reasoning_effort).toBeUndefined();
   });
 
+  test('default format passes the client reasoning_effort through when support is unknown', async () => {
+    // compat.supportsReasoningEffort is undefined (unknown, not false): the
+    // default dialect natively speaks reasoning_effort, so an untranslatable
+    // client value passes through instead of being silently dropped.
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(
+      piModel({
+        thinkingLevelMap: {},
+        compat: {},
+      })
+    );
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning_effort: 'medium',
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning_effort).toBe('medium');
+    expect(result.payload.reasoning).toBeUndefined();
+  });
+
+  test('default format strips reasoning_effort when the dialect provably lacks support', async () => {
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(
+      piModel({
+        thinkingLevelMap: {},
+        compat: { supportsReasoningEffort: false },
+      })
+    );
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning_effort: 'medium',
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning_effort).toBeUndefined();
+    expect(result.payload.reasoning).toBeUndefined();
+  });
+
   test('leaves untranslated reasoning fields untouched when no intent is recognized', async () => {
     // With model.reasoning disabled there is nothing to translate — the
     // projection is a no-op passthrough and must NOT strip the field (it may
