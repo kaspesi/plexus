@@ -13,7 +13,6 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
-  security-events: write
 
 jobs:
   cora-review:
@@ -100,6 +99,7 @@ jobs:
           upload-sarif: 'false'
 
       - name: Post Cora review status
+        id: cora-status
         if: always() && steps.preflight.outputs.should_run == 'true'
         uses: actions/github-script@v9
         with:
@@ -116,13 +116,19 @@ jobs:
             }
 
             const results = (sarif?.runs ?? []).flatMap((run) => run.results ?? []);
-            const fallback = results.length === 1
-              && results[0].level === 'warning'
-              && (results[0].message?.text ?? '').toLowerCase().includes('could not complete');
+            const fallbackResult = results.find((result) =>
+              result.level === 'warning'
+              && (result.message?.text ?? '').toLowerCase().includes('could not complete'),
+            );
+            const fallback = Boolean(fallbackResult);
+            const failureMessage = !sarif
+              ? 'Cora did not produce a valid review result.'
+              : fallbackResult?.message?.text ?? '';
             let status;
 
             if (!sarif || fallback) {
-              status = '⚠️ **Cora review could not complete.** See the workflow logs for details.';
+              status = `⚠️ **Cora review could not complete.** ${failureMessage}`;
+              core.warning(failureMessage);
             } else if (results.length === 0) {
               status = '✅ **Cora ran successfully.** No major concerns found.';
             } else {
@@ -146,6 +152,8 @@ jobs:
               '',
               '_Review focuses on major correctness, security, and maintainability concerns._',
             ].join('\n');
+
+            core.setOutput('review_failed', String(!sarif || fallback));
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -170,75 +178,14 @@ jobs:
               });
             }
 
-      - name: Prepare Cora SARIF for Code Scanning
-        id: cora-sarif
-        if: always() && steps.preflight.outputs.should_run == 'true'
+      - name: Fail if Cora review did not complete
+        if: always() && steps.preflight.outputs.should_run == 'true' && steps.cora-status.outputs.review_failed == 'true'
         run: |
-          python3 <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          source = Path('cora-results.sarif')
-          destination = Path('cora-results.github.sarif')
-          has_sarif = False
-          excluded = 0
-
-          def has_source_location(result):
-              locations = result.get('locations')
-              if not isinstance(locations, list):
-                  return False
-              for location in locations:
-                  if not isinstance(location, dict):
-                      continue
-                  physical_location = location.get('physicalLocation')
-                  if not isinstance(physical_location, dict):
-                      continue
-                  artifact_location = physical_location.get('artifactLocation')
-                  if not isinstance(artifact_location, dict):
-                      continue
-                  uri = artifact_location.get('uri')
-                  if not isinstance(uri, str) or not uri.strip():
-                      continue
-                  path = Path(uri)
-                  if not path.is_absolute() and '..' not in path.parts and path.is_file():
-                      return True
-              return False
-
-          try:
-              sarif = json.loads(source.read_text())
-          except (FileNotFoundError, json.JSONDecodeError):
-              sarif = None
-
-          if isinstance(sarif, dict) and isinstance(sarif.get('runs'), list):
-              has_sarif = True
-              for run in sarif['runs']:
-                  results = run.get('results', [])
-                  valid_results = []
-                  for result in results:
-                      if has_source_location(result):
-                          valid_results.append(result)
-                      else:
-                          excluded += 1
-                  run['results'] = valid_results
-              destination.write_text(json.dumps(sarif))
-
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'has_sarif={str(has_sarif).lower()}\n')
-          if excluded:
-              print(f'::notice::Excluded {excluded} Cora finding(s) without a source location from Code Scanning; they remain in the PR comment.')
-          PY
-
-      - name: Upload Cora SARIF to GitHub Code Scanning
-        if: always() && steps.cora-sarif.outputs.has_sarif == 'true'
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
-        with:
-          sarif_file: cora-results.github.sarif
-          category: cora-review
-          wait-for-processing: true
+          echo "::error::Cora review did not complete. See the PR comment for the provider error."
+          exit 1
 
       - name: Check for blocking Cora findings
-        if: always() && steps.preflight.outputs.should_run == 'true'
+        if: steps.preflight.outputs.should_run == 'true'
         run: |
           python3 <<'PY'
           import json
