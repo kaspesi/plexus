@@ -119,6 +119,45 @@ describe('OAuthAuthManager', () => {
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
   });
 
+  it('propagates cancellation while waiting behind another account refresh', async () => {
+    vi.useFakeTimers();
+    mocks.configService.getAllOAuthProviders.mockResolvedValue([
+      { providerType: 'anthropic', accountId: 'personal' },
+      { providerType: 'anthropic', accountId: 'work' },
+    ]);
+    mocks.configService.getOAuthCredentials.mockResolvedValue(initialCredentials);
+
+    let resolveFirstRefresh: ((value: typeof refreshedCredentials) => void) | undefined;
+    mocks.refresh
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirstRefresh = resolve;
+          })
+      )
+      .mockResolvedValueOnce(refreshedCredentials);
+
+    const manager = await createManager();
+    const first = manager.getApiKey('anthropic', 'personal', { refreshIfOlderThanMs: 0 });
+    await vi.waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
+
+    const controller = new AbortController();
+    const second = manager.getApiKey('anthropic', 'work', {
+      refreshIfOlderThanMs: 0,
+      signal: controller.signal,
+    });
+    controller.abort(new DOMException('Request aborted', 'AbortError'));
+
+    await expect(second).rejects.toMatchObject({ name: 'AbortError' });
+    resolveFirstRefresh?.(refreshedCredentials);
+    await expect(first).resolves.toBe('new-access');
+
+    const third = manager.getApiKey('anthropic', 'work', { refreshIfOlderThanMs: 0 });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(third).resolves.toBe('new-access');
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+  });
+
   it('backs off a failed proactive refresh and keeps using a valid access token', async () => {
     mocks.refresh.mockRejectedValue(new Error('HTTP 429: Too Many Requests'));
     const manager = await createManager();

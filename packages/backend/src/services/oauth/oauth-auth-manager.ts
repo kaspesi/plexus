@@ -31,6 +31,30 @@ function waitForDelay(delayMs: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+function waitForPromise<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(signal.reason ?? new DOMException('Request aborted', 'AbortError'));
+  }
+
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      reject(signal.reason ?? new DOMException('Request aborted', 'AbortError'));
+    };
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      }
+    );
+  });
+}
+
 interface GetApiKeyOptions {
   refreshIfOlderThanMs?: number;
   signal?: AbortSignal;
@@ -362,14 +386,11 @@ export class OAuthAuthManager {
     signal: AbortSignal
   ): Promise<T> {
     const previous = this.providerRefreshTails.get(provider) ?? Promise.resolve();
-    let release: (() => void) | undefined;
-    const tail = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    this.providerRefreshTails.set(provider, tail);
-
-    await previous;
-    try {
+    const refresh = (async () => {
+      await previous;
+      if (signal.aborted) {
+        throw signal.reason ?? new DOMException('Request aborted', 'AbortError');
+      }
       const minIntervalMs = PROVIDER_REFRESH_MIN_INTERVAL_MS[provider] ?? 0;
       const lastAttemptAt = this.lastProviderRefreshAttemptAt.get(provider) ?? 0;
       const delayMs = Math.max(0, minIntervalMs - (Date.now() - lastAttemptAt));
@@ -382,12 +403,19 @@ export class OAuthAuthManager {
       }
       this.lastProviderRefreshAttemptAt.set(provider, Date.now());
       return await operation();
-    } finally {
-      release?.();
+    })();
+    const tail = refresh.then(
+      () => undefined,
+      () => undefined
+    );
+    this.providerRefreshTails.set(provider, tail);
+    void tail.then(() => {
       if (this.providerRefreshTails.get(provider) === tail) {
         this.providerRefreshTails.delete(provider);
       }
-    }
+    });
+
+    return waitForPromise(refresh, signal);
   }
 
   getCredentials(provider: OAuthProvider, accountId?: string | null): OAuthCredentials | null {
