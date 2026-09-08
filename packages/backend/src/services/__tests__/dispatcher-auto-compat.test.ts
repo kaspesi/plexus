@@ -457,6 +457,30 @@ describe('Dispatcher registry auto-compat', () => {
     expect(result.payload.reasoning_effort).toBeUndefined();
   });
 
+  test('default format drops stale reasoning_effort when null reasoning falls back to request intent', async () => {
+    vi.mocked(piAiRegistry.resolvePiAiModel).mockReturnValue(piModel({ compat: {} }));
+    const dispatcher = new Dispatcher() as any;
+
+    const result = await dispatcher.transformRequestPayload(
+      request({
+        reasoning: { enabled: false },
+        originalBody: {
+          model: 'alias-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          reasoning: null,
+          reasoning_effort: 'high',
+        },
+      }),
+      route(),
+      { transformRequest: vi.fn() },
+      'chat',
+      []
+    );
+
+    expect(result.payload.reasoning).toBeUndefined();
+    expect(result.payload.reasoning_effort).toBeUndefined();
+  });
+
   test('default format ignores a malformed non-object reasoning value as intent source', async () => {
     // A string `reasoning` is not a recognized intent source for the
     // extractor, so reasoning_effort remains the authoritative intent and
