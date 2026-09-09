@@ -792,6 +792,18 @@ export const McpOAuthConfigSchema = z.object({
   issuer: z.string().url().optional(),
 });
 
+const OAuthMaskingConfigSchema = z.object({
+  /**
+   * Preserve the caller's real tool `description` fields on the outbound
+   * Claude-Code-masked request instead of blanking them. Default `false`
+   * keeps the historical behavior. See
+   * `transformers/oauth/masking/cc-tools.ts` for the rationale (genuine
+   * Claude Code sends full tool descriptions, so preserving is both more
+   * authentic and lets the model use tools correctly).
+   */
+  preserveToolDescriptions: z.boolean().default(false),
+});
+
 const RawPlexusConfigSchema = z
   .object({
     providers: z.record(z.string(), ProviderConfigSchema),
@@ -807,6 +819,7 @@ const RawPlexusConfigSchema = z
     stall: StallConfigSchema.optional(),
     backgroundExploration: BackgroundExplorationConfigSchema.optional(),
     mcpOAuth: McpOAuthConfigSchema.optional(),
+    oauthMasking: OAuthMaskingConfigSchema.optional(),
     mcp_servers: z.record(z.string(), McpServerConfigSchema).optional(),
     user_quotas: z.record(z.string(), QuotaDefinitionSchema).optional(),
     // Applied to keys with NO quotas assigned (`quotas` absent/empty). Non-stacking:
@@ -829,6 +842,7 @@ export type StallConfigType = {
   stallCooldown?: boolean;
 };
 export type McpOAuthConfig = z.infer<typeof McpOAuthConfigSchema>;
+export type OAuthMaskingConfig = z.infer<typeof OAuthMaskingConfigSchema>;
 export type PlexusConfig = z.infer<typeof RawPlexusConfigSchema> & {
   failover: FailoverPolicy;
   cooldown?: CooldownPolicy;
