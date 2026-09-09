@@ -221,6 +221,7 @@ export const Providers = () => {
           fetchedModels={f.fetchedModels}
           selectedModelIds={f.selectedModelIds}
           fetchError={f.fetchError}
+          fetchWarning={f.fetchWarning}
           isOAuthMode={f.isOAuthMode}
           onFetch={f.handleFetchModels}
           onToggleSelection={f.toggleModelSelection}

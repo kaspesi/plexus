@@ -307,7 +307,7 @@ tests).
 
 ### Live probe results
 
-Run on 2026-09-08 against the local dev stack (`feat/codex-oauth-images` working tree) with an OpenAI Codex OAuth account (`x-codex-plan-type: prolite`), through Plexus aliases `codex-image` → `codex/gpt-image-2`, `codex-image-25-flare` → `gpt-image-2.5-flare`, `codex-image-25-sunburst` → `gpt-image-2.5-sunburst`, and `codex-chat` → `gpt-5.4`. Every row is one real request; "b64" is the base64 length of the returned image.
+Run on 2026-09-08 against the local dev stack (`feat/codex-oauth-images` working tree) with an OpenAI Codex OAuth account (`x-codex-plan-type: prolite`), through Plexus aliases `codex-image` → `codex/gpt-image-2`, `codex-image-25-flare` → `gpt-image-2.5-flare`, `codex-image-25-sunburst` → `gpt-image-2.5-sunburst`, and `codex-chat` → `gpt-5.4` → failover `gpt-5.6-sol`. Every row is one real request; "b64" is the base64 length of the returned image.
 
 | Probe | Request | Result |
 | --- | --- | --- |
@@ -332,7 +332,7 @@ Run on 2026-09-08 against the local dev stack (`feat/codex-oauth-images` working
 | Responses `image_generation` tool, streaming | same with `stream: true` | 200; 13 native frames including `response.image_generation_call.in_progress/generating/completed`, two `response.output_item.done`, `response.completed` |
 | Chat completions with the `image_generation` tool | `POST /v1/chat/completions` `{model: codex-chat, tools:[{type: image_generation, ...}]}` | 200; markdown data URI (1 034 726 chars); usage `prompt_tokens 2303`, `completion_tokens 51` |
 
-Not exercised: a non-image model id under `access_via: ["codex-images"]` (the temporary alias resolved to no healthy target before dispatch, so the upstream behaviour for an unknown image model id remains unverified). The chat model `gpt-5.5` returned an upstream 404 for this account; `gpt-5.4` worked.
+Not exercised: a non-image model id under `access_via: ["codex-images"]` (the temporary alias resolved to no healthy target before dispatch, so the upstream behaviour for an unknown image model id remains unverified). `gpt-5.5` works for this account (an earlier 404 was transient); `gpt-5.4` is rejected by Codex for ChatGPT accounts ("not supported when using Codex with a ChatGPT account") and the Responses-tool probes succeeded via alias failover to `gpt-5.6-sol`. The live model list from `/codex/models` reflects this: it omits `gpt-5.4` and lists `gpt-5.5`.
 
 Conclusions: the Codex backend accepts `gpt-image-2`, `gpt-image-2.5-flare` and `gpt-image-2.5-sunburst`; it ignores `output_format` and `output_compression` rather than rejecting them, so the transformer keeps rejecting those fields explicitly instead of forwarding them; `n` is forwarded but `n > 1` still yields one image; every returned image was PNG.
 

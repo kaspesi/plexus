@@ -421,6 +421,27 @@ export async function prepareCodexImagesDispatch(params: {
   };
 }
 
+/**
+ * The model id used only to resolve the Codex upstream base URL for the
+ * account-scoped model list. `/codex/models` is not model-scoped, but base-URL
+ * resolution is (registry entry first, provider default second), so we resolve
+ * through a representative Codex model instead of duplicating the fallback
+ * table at the call site.
+ */
+const CODEX_BASE_URL_REFERENCE_MODEL = 'gpt-5-codex';
+
+/**
+ * URL of the account-scoped Codex model list — the same ChatGPT backend that
+ * serves `/codex/responses`, carrying the CLI version the rest of the Codex
+ * identity already advertises (`client_version`, which the backend uses to
+ * decide which models a given CLI build may see).
+ */
+export function buildCodexModelsUrl(): string {
+  const baseUrl = resolveOAuthBaseUrl('openai-codex', CODEX_BASE_URL_REFERENCE_MODEL);
+  const clientVersion = CodexVersionService.getInstance().getVersion();
+  return `${baseUrl}/codex/models?client_version=${encodeURIComponent(clientVersion)}`;
+}
+
 // ─── GitHub Copilot (multi-API: chat / responses / messages) ───────────────
 //
 // Copilot needs NO masking and NO tool-name renames (simpler than Anthropic /
