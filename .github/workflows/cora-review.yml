@@ -25,59 +25,99 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const trustedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
-
-            // Load trusted community contributors from repo file
-            const trustedUsers = new Set();
-            try {
-              const { data } = await github.rest.repos.getContent({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                path: '.github/workflows/trusted-contributors',
-              });
-              const content = Buffer.from(data.content, 'base64').toString('utf8');
-              for (const line of content.split('\n')) {
-                const username = line.trim();
-                if (username) trustedUsers.add(username);
-              }
-            } catch {
-              // File not found or unreadable — treat as empty list
-            }
-
             const pull = context.payload.pull_request;
-            const sameRepository =
-              pull.head.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`;
-            let shouldRun = false;
-            let reason = '';
-
-            if (pull.draft) {
-              reason = 'Skipping draft PR until it is marked ready for review';
-            } else if (!sameRepository) {
-              reason = `Skipping fork PR from ${pull.head.repo?.full_name ?? 'unknown repository'}`;
-            } else if (pull.user.login === 'github-actions[bot]') {
-              shouldRun = true;
-              reason = 'Trusted PR author: github-actions[bot]';
-            } else if (trustedAssociations.has(pull.author_association)) {
-              shouldRun = true;
-              reason = `Trusted PR author association: ${pull.author_association}`;
-            } else if (trustedUsers.has(pull.user.login)) {
-              shouldRun = true;
-              reason = `Trusted community member: ${pull.user.login}`;
-            } else {
-              reason = `Skipping automatic run for external PR author association: ${pull.author_association}`;
-            }
+            const shouldRun = !pull.draft;
+            const reason = pull.draft
+              ? 'Skipping draft PR until it is marked ready for review'
+              : `Reviewing PR #${pull.number} from ${pull.head.repo?.full_name ?? 'unknown repository'} using a trusted checkout and the PR diff`;
 
             core.info(reason);
             core.setOutput('should_run', String(shouldRun));
             core.setOutput('reason', reason);
 
-      - name: Checkout PR head
+      - name: Checkout trusted base
         if: steps.preflight.outputs.should_run == 'true'
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
           persist-credentials: false
+
+      - name: Fetch PR diff
+        if: steps.preflight.outputs.should_run == 'true'
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          metadata_file="$RUNNER_TEMP/cora-pr-metadata-before.json"
+          gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" > "$metadata_file"
+          python3 - "$metadata_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          pull = json.loads(Path(sys.argv[1]).read_text())
+          expected_base = os.environ["EXPECTED_BASE_SHA"]
+          expected_head = os.environ["EXPECTED_HEAD_SHA"]
+          actual_base = pull["base"]["sha"]
+          actual_head = pull["head"]["sha"]
+          if (actual_base, actual_head) != (expected_base, expected_head):
+              raise SystemExit(
+                  "PR changed while the workflow was starting. "
+                  f"Expected base/head {expected_base}/{expected_head}, "
+                  f"got {actual_base}/{actual_head}."
+              )
+          PY
+
+          diff_file="$RUNNER_TEMP/cora-pr.diff"
+          gh api \
+            --header 'Accept: application/vnd.github.v3.diff' \
+            "repos/${REPOSITORY}/pulls/${PR_NUMBER}" \
+            > "$diff_file"
+          echo "Fetched PR diff ($(wc -c < "$diff_file") bytes)"
+
+          metadata_file="$RUNNER_TEMP/cora-pr-metadata-after.json"
+          gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" > "$metadata_file"
+          python3 - "$metadata_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          pull = json.loads(Path(sys.argv[1]).read_text())
+          expected_base = os.environ["EXPECTED_BASE_SHA"]
+          expected_head = os.environ["EXPECTED_HEAD_SHA"]
+          actual_base = pull["base"]["sha"]
+          actual_head = pull["head"]["sha"]
+          if (actual_base, actual_head) != (expected_base, expected_head):
+              raise SystemExit(
+                  "PR changed while its diff was being downloaded. "
+                  f"Expected base/head {expected_base}/{expected_head}, "
+                  f"got {actual_base}/{actual_head}."
+              )
+          PY
+
+          echo "path=$diff_file" >> "$GITHUB_OUTPUT"
+
+      - name: Select trusted Cora configuration
+        if: steps.preflight.outputs.should_run == 'true'
+        id: config
+        run: |
+          if [ -f .cora.yaml ]; then
+            echo "Using the base repository's .cora.yaml"
+            echo "path=$GITHUB_WORKSPACE/.cora.yaml" >> "$GITHUB_OUTPUT"
+          else
+            config_file="$RUNNER_TEMP/cora-ci.yaml"
+            printf 'hook:\n  max_diff_size: 5242880\nllm:\n  timeout: 600\n' > "$config_file"
+            echo "Using trusted fallback Cora configuration"
+            echo "path=$config_file" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Normalize LLM base URL
         if: steps.preflight.outputs.should_run == 'true'
@@ -85,6 +125,10 @@ jobs:
         env:
           LLM_API_HOST: ${{ secrets.LLM_API_HOST }}
         run: |
+          if [ -z "$LLM_API_HOST" ]; then
+            echo "::error::LLM_API_HOST is not configured"
+            exit 1
+          fi
           base="${LLM_API_HOST%/}"
           case "$base" in
             */v1) ;;
@@ -92,31 +136,162 @@ jobs:
           esac
           echo "url=$base" >> "$GITHUB_OUTPUT"
 
+      - name: Install Cora CLI
+        if: steps.preflight.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cora_version="v0.15.0"
+          case "$(uname -m)" in
+            x86_64) asset="cora-x86_64-unknown-linux-gnu" ;;
+            aarch64) asset="cora-aarch64-unknown-linux-gnu" ;;
+            *)
+              echo "::error::Unsupported runner architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
+
+          download_dir="$RUNNER_TEMP/cora-download"
+          bin_dir="$RUNNER_TEMP/cora-bin"
+          mkdir -p "$download_dir" "$bin_dir"
+
+          gh release download "$cora_version" \
+            --repo codecoradev/cora-code \
+            --pattern "${asset}-${cora_version}.tar.gz" \
+            --pattern checksums-sha256.txt \
+            --dir "$download_dir"
+
+          archive="$download_dir/${asset}-${cora_version}.tar.gz"
+          checksums="$download_dir/checksums-sha256.txt"
+          expected="$(awk -v name="$(basename "$archive")" '$2 == name {print $1}' "$checksums")"
+          actual="$(sha256sum "$archive" | awk '{print $1}')"
+          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+            echo "::error::Cora release checksum verification failed"
+            exit 1
+          fi
+
+          tar xzf "$archive" -C "$bin_dir" cora
+          chmod +x "$bin_dir/cora"
+          echo "$bin_dir" >> "$GITHUB_PATH"
+          "$bin_dir/cora" --version
+
       - name: Run Cora AI Code Review
         if: steps.preflight.outputs.should_run == 'true'
-        uses: codecoradev/cora-review-action@v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          cora-api-key: ${{ secrets.LLM_API_KEY }}
-          cora-base-url: ${{ steps.baseurl.outputs.url }}
-          cora-model: kimi-k3
-          cora-version: v0.15.0
-          base-branch: origin/main
-          upload-sarif: 'false'
+        env:
+          CORA_API_KEY: ${{ secrets.LLM_API_KEY }}
+          CORA_BASE_URL: ${{ steps.baseurl.outputs.url }}
+          CORA_CONFIG: ${{ steps.config.outputs.path }}
+          CORA_MODEL: kimi-k3
+          DIFF_FILE: ${{ steps.diff.outputs.path }}
+          RESULTS_FILE: ${{ runner.temp }}/cora-results.sarif
+          STDERR_FILE: ${{ runner.temp }}/cora-stderr.log
+        run: |
+          if [ -z "$CORA_API_KEY" ]; then
+            echo "::error::LLM_API_KEY is not configured"
+            exit 1
+          fi
+
+          run_cora() {
+            rm -f "$RESULTS_FILE" "$STDERR_FILE"
+            cora review \
+              --diff-file "$DIFF_FILE" \
+              --format sarif \
+              --severity major \
+              --max-diff-size 5242880 \
+              --quiet \
+              --output-file "$RESULTS_FILE" \
+              2> "$STDERR_FILE"
+          }
+
+          exit_code=1
+          for attempt in 1 2 3; do
+            if run_cora; then
+              exit_code=0
+            else
+              exit_code=$?
+            fi
+            sarif_bytes=$(wc -c < "$RESULTS_FILE" 2>/dev/null || echo 0)
+
+            is_fallback=0
+            if [ "$sarif_bytes" -gt 10 ]; then
+              is_fallback=$(python3 -c "
+          import os
+          import json
+          try:
+              data = json.load(open(os.environ['RESULTS_FILE']))
+              results = data.get('runs', [{}])[0].get('results', [])
+              if len(results) == 1:
+                  message = results[0].get('message', {}).get('text', '')
+                  print(int('could not complete' in message.lower()))
+              else:
+                  print(0)
+          except Exception:
+              print(0)
+          " 2>/dev/null || echo 0)
+            fi
+
+            if [ "$is_fallback" -eq 1 ]; then
+              echo "::warning::Cora attempt $attempt returned fallback SARIF"
+              exit_code=1
+            fi
+
+            if [ "$sarif_bytes" -gt 10 ] && [ "$is_fallback" -eq 0 ]; then
+              # Cora can return exit 2 for findings when a trusted config enables
+              # a quality gate. The SARIF is still a valid review result.
+              exit_code=0
+              break
+            fi
+
+            if [ -s "$STDERR_FILE" ]; then
+              echo "::warning::Cora attempt $attempt failed: $(cat "$STDERR_FILE")"
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+
+          if [ "$exit_code" -ne 0 ]; then
+            echo "::warning::Cora review could not complete after $attempt attempt(s)"
+            cat > "$RESULTS_FILE" <<'SARIF_EOF'
+          {
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [{
+              "tool": {
+                "driver": {
+                  "name": "cora",
+                  "informationUri": "https://github.com/codecoradev/cora-code",
+                  "version": "0.15.0"
+                }
+              },
+              "results": [{
+                "level": "warning",
+                "message": {
+                  "text": "Cora AI review could not complete after 3 attempts. Review was skipped."
+                }
+              }]
+            }]
+          }
+          SARIF_EOF
+          fi
 
       - name: Post Cora review status
         id: cora-status
         if: always() && steps.preflight.outputs.should_run == 'true'
         uses: actions/github-script@v9
+        env:
+          RESULTS_FILE: ${{ runner.temp }}/cora-results.sarif
         with:
           script: |
             const fs = require('fs');
             const marker = '<!-- cora-review-status -->';
             const pullNumber = context.payload.pull_request.number;
+            const reviewedHead = context.payload.pull_request.head.sha;
+            const reviewedBase = context.payload.pull_request.base.sha;
             let sarif;
 
             try {
-              sarif = JSON.parse(fs.readFileSync('cora-results.sarif', 'utf8'));
+              sarif = JSON.parse(fs.readFileSync(process.env.RESULTS_FILE, 'utf8'));
             } catch {
               sarif = null;
             }
@@ -138,50 +313,72 @@ jobs:
             } else if (results.length === 0) {
               status = '✅ **Cora ran successfully.** No major concerns found.';
             } else {
+              const truncate = (value, length) => {
+                const text = String(value).replace(/@/g, '@\u200b');
+                return text.length > length ? `${text.slice(0, length)}...` : text;
+              };
               const findings = results.map((result) => {
                 const location = result.locations?.[0]?.physicalLocation;
                 const file = location?.artifactLocation?.uri;
                 const line = location?.region?.startLine;
-                const reference = file ? `\`${file}:${line ?? '?'}\`` : 'general';
+                const reference = file
+                  ? `\`${truncate(file, 300)}:${line ?? '?'}\``
+                  : 'general';
                 const severity = result.level ?? 'note';
-                const message = result.message?.text ?? result.message?.markdown ?? 'No message';
+                const message = truncate(
+                  result.message?.text ?? result.message?.markdown ?? 'No message',
+                  2000,
+                );
                 return `- **${severity}** — ${reference}: ${message}`;
               });
               status = `⚠️ **Cora reported ${results.length} concern(s).**\n\n${findings.join('\n')}`;
             }
 
-            const body = [
+            let body = [
               marker,
               '## 🔍 Cora AI Code Review',
+              '',
+              `Reviewed commit: \`${reviewedHead}\``,
+              `Base commit: \`${reviewedBase}\``,
               '',
               status,
               '',
               '_Review focuses on major correctness, security, and maintainability concerns._',
             ].join('\n');
+            if (body.length > 60000) {
+              body = `${body.slice(0, 59500)}\n\n_Additional findings were omitted because the comment was too large._`;
+            }
 
             core.setOutput('review_failed', String(!sarif || fallback));
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: pullNumber,
-              per_page: 100,
-            });
-            const existing = comments.find((comment) => comment.body?.includes(marker));
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments, {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pullNumber,
-                body,
+                per_page: 100,
               });
+              const existing = comments.find((comment) =>
+                comment.user?.login === 'github-actions[bot]'
+                && comment.body?.includes(marker),
+              );
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pullNumber,
+                  body,
+                });
+              }
+            } catch (error) {
+              core.warning(`Could not update the Cora status comment: ${error.message}`);
             }
 
       - name: Fail if Cora review did not complete
@@ -192,14 +389,17 @@ jobs:
 
       - name: Check for blocking Cora findings
         if: steps.preflight.outputs.should_run == 'true'
+        env:
+          RESULTS_FILE: ${{ runner.temp }}/cora-results.sarif
         run: |
           python3 <<'PY'
           import json
+          import os
           from pathlib import Path
           import sys
 
           try:
-              sarif = json.loads(Path('cora-results.sarif').read_text())
+              sarif = json.loads(Path(os.environ['RESULTS_FILE']).read_text())
           except (FileNotFoundError, json.JSONDecodeError):
               sys.exit(0)
 
@@ -216,4 +416,6 @@ jobs:
 
       - name: Log skipped Cora run
         if: steps.preflight.outputs.should_run != 'true'
-        run: echo "${{ steps.preflight.outputs.reason }}"
+        env:
+          REASON: ${{ steps.preflight.outputs.reason }}
+        run: printf '%s\n' "$REASON"
