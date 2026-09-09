@@ -8,12 +8,16 @@ import type { ResolvedAdapter } from '../../types/provider-adapter';
 import { applyGeminiThinkingConfig, getApiMetadata } from '../providers/provider-api-selection';
 import { isClaudeMaskingApiKeyRoute, isPiAiRoute } from '../oauth/oauth-dispatcher';
 import {
+  copilotEndpoint,
+  extractChatgptAccountId,
   isCodexCliShapedBody,
   isNativeOAuthProvider,
   prepareGenericOAuthDispatch,
   prepareNativeOAuthDispatch,
+  resolveCopilotBaseUrl,
   type PreparedOAuthRequest,
 } from '../oauth/oauth-native-request';
+import { OAuthAuthManager } from '../oauth/oauth-auth-manager';
 import {
   applyRegistryAutoCompat,
   hasCodexResponsesExtensions,
@@ -340,4 +344,73 @@ export async function buildRequestPayload(
   }
 
   return { payload, bypassTransformation };
+}
+
+/**
+ * Reactively refreshes OAuth credentials and updates stashed wire request
+ * parameters (url + headers) after an upstream 401. Returns the updated url and
+ * headers for a retry attempt against the same target, or null if the route
+ * is not a refreshable OAuth route or has no active stash.
+ */
+export async function refreshOAuthRoute(
+  route: RouteResult,
+  targetApiType: string,
+  signal?: AbortSignal
+): Promise<{ url: string; headers: Record<string, string> } | null> {
+  const nativeOAuth = isNativeOAuthRoute(route, targetApiType);
+  const genericOAuth =
+    !nativeOAuth &&
+    !isClaudeMaskingApiKeyRoute(route, targetApiType) &&
+    isPiAiRoute(route, targetApiType);
+
+  if (!nativeOAuth && !genericOAuth) return null;
+  if (isClaudeMaskingApiKeyRoute(route, targetApiType)) return null;
+
+  const stashed = (route as any)[NATIVE_OAUTH_STASH] as PreparedOAuthRequest | undefined;
+  if (!stashed) return null;
+
+  const provider = (route.config.oauth_provider || route.provider) as string;
+  const oauthAccountId = route.config.oauth_account?.trim();
+
+  if (genericOAuth) {
+    const prepared = await prepareGenericOAuthDispatch({
+      provider,
+      modelId: route.model,
+      body: stashed.body,
+      streaming: stashed.headers.Accept?.includes('text/event-stream') ?? false,
+      apiType: targetApiType,
+      oauthAccountId,
+      extraHeaders: route.config.headers,
+      forceRefresh: true,
+      signal,
+    });
+    (route as any)[NATIVE_OAUTH_STASH] = prepared;
+    return { url: prepared.url, headers: prepared.headers };
+  }
+
+  // Native OAuth: force-refresh the token via OAuthAuthManager
+  const token = await OAuthAuthManager.getInstance().getApiKey(provider, oauthAccountId, {
+    forceRefresh: true,
+    signal,
+  });
+
+  // Update Authorization header with the fresh token
+  stashed.headers = {
+    ...stashed.headers,
+    Authorization: `Bearer ${token}`,
+  };
+
+  if (provider === 'openai-codex') {
+    const accountId = extractChatgptAccountId(token);
+    if (accountId) {
+      stashed.headers['chatgpt-account-id'] = accountId;
+    } else {
+      delete stashed.headers['chatgpt-account-id'];
+    }
+  } else if (provider === 'github-copilot') {
+    const baseUrl = resolveCopilotBaseUrl(token).replace(/\/$/, '');
+    stashed.url = `${baseUrl}${copilotEndpoint(targetApiType)}`;
+  }
+
+  return { url: stashed.url, headers: stashed.headers };
 }
