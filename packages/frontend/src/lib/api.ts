@@ -235,6 +235,7 @@ export interface Provider {
   modelAutosync?: {
     enabled: boolean;
     intervalMinutes: number;
+    createAliases: boolean;
   };
   adapter?: any[];
   timeoutMs?: number;
@@ -1873,8 +1874,9 @@ export const api = {
             ? {
                 enabled: val.model_autosync.enabled === true,
                 intervalMinutes: Math.max(1, val.model_autosync.intervalMinutes || 60),
+                createAliases: val.model_autosync.createAliases === true,
               }
-            : { enabled: false, intervalMinutes: 60 },
+            : { enabled: false, intervalMinutes: 60, createAliases: false },
           adapter: val.adapter ? (Array.isArray(val.adapter) ? val.adapter : [val.adapter]) : [],
           timeoutMs: val.timeoutMs ?? undefined,
           maxConcurrency: val.maxConcurrency ?? undefined,
@@ -1929,6 +1931,7 @@ export const api = {
       model_autosync: {
         enabled: provider.modelAutosync?.enabled === true,
         intervalMinutes: Math.max(1, provider.modelAutosync?.intervalMinutes || 60),
+        createAliases: provider.modelAutosync?.createAliases === true,
       },
       adapter: provider.adapter ?? [],
       ...(provider.timeoutMs != null ? { timeoutMs: provider.timeoutMs } : {}),
