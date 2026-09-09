@@ -326,6 +326,29 @@ function adornCodexResponsesBody(body: any): any {
 }
 
 /**
+ * The Codex OAuth identity every ChatGPT-backend call carries, regardless of
+ * endpoint: the Bearer token, the account the token was minted for, and the
+ * authentic Codex CLI fingerprint (the native path can finally send the real UA
+ * + originator; pi-ai clobbered the UA to "pi (...)").
+ *
+ * Deliberately excludes per-endpoint concerns — `Content-Type`, `accept`,
+ * `OpenAI-Beta` (a Responses flag) and the Responses `session-id` pair are the
+ * caller's business. Shared by the Responses request below and the Codex images
+ * endpoints, which authenticate identically.
+ */
+export function buildCodexOAuthHeaders(token: string): Record<string, string> {
+  const accountId = extractChatgptAccountId(token);
+  const codex = CodexVersionService.getInstance();
+  return {
+    Authorization: `Bearer ${token}`,
+    ...(accountId ? { 'chatgpt-account-id': accountId } : {}),
+    originator: 'codex_cli_rs',
+    Version: codex.getVersion(),
+    'User-Agent': codex.getUserAgent(),
+  };
+}
+
+/**
  * Prepare a native Codex OAuth request. `passthrough` sends the body verbatim
  * (CLI-shaped); otherwise the body is adorned for the backend.
  */
@@ -346,8 +369,6 @@ function prepareCodexOAuthRequest(
   const baseUrl = resolveOAuthBaseUrl('openai-codex' as OAuthProvider, modelId);
   const url = `${baseUrl}/codex/responses`;
 
-  const accountId = extractChatgptAccountId(token);
-  const codex = CodexVersionService.getInstance();
   const sessionId =
     typeof body?.prompt_cache_key === 'string' && body.prompt_cache_key.length > 0
       ? body.prompt_cache_key
@@ -356,14 +377,9 @@ function prepareCodexOAuthRequest(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     accept: streaming ? 'text/event-stream' : 'application/json',
-    Authorization: `Bearer ${token}`,
-    ...(accountId ? { 'chatgpt-account-id': accountId } : {}),
-    // Authentic Codex fingerprint (the native path can finally send the real UA
-    // + originator; pi-ai clobbered the UA to "pi (...)").
-    originator: 'codex_cli_rs',
+    ...buildCodexOAuthHeaders(token),
+    // Responses-only extras on top of the shared Codex identity.
     'OpenAI-Beta': 'responses=experimental',
-    Version: codex.getVersion(),
-    'User-Agent': codex.getUserAgent(),
     ...(sessionId ? { 'session-id': sessionId, 'x-client-request-id': sessionId } : {}),
   };
 
@@ -373,6 +389,35 @@ function prepareCodexOAuthRequest(
     body,
     // Codex applies no request-side tool renames, so nothing to reverse.
     reverseResponseFrame: (frame) => frame,
+  };
+}
+
+/**
+ * Resolve the auth seam for a Codex images call (`<baseUrl>/images/generations`
+ * or `/images/edits`). The ChatGPT backend serves the Codex image endpoints
+ * under the same `/codex` prefix as `/codex/responses` and authenticates them
+ * with the same OAuth identity, so this is the Responses preparation minus the
+ * body: token resolution (auto-refreshed by `OAuthAuthManager.getApiKey`) plus
+ * the shared Codex headers.
+ *
+ * No `OpenAI-Beta` — that flag is Responses-specific; the Codex image client
+ * sends only auth, the account id and the CLI fingerprint. No bespoke
+ * 401 → refresh → retry either: `getApiKey` already refreshes proactively, and
+ * the chat path has no such retry (parity beats a one-off).
+ */
+export async function prepareCodexImagesDispatch(params: {
+  modelId: string;
+  oauthAccountId?: string | null;
+}): Promise<{ baseUrl: string; headers: Record<string, string> }> {
+  const { modelId, oauthAccountId } = params;
+  const token = await OAuthAuthManager.getInstance().getApiKey('openai-codex', oauthAccountId);
+  const baseUrl = `${resolveOAuthBaseUrl('openai-codex', modelId)}/codex`;
+  return {
+    baseUrl,
+    headers: {
+      Accept: 'application/json',
+      ...buildCodexOAuthHeaders(token),
+    },
   };
 }
 

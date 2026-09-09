@@ -285,7 +285,13 @@ export const ProviderConfigSchema = z
       z.string().refine((value) => isValidUrlOrOAuth(value), {
         message: 'api_base_url must be a valid URL or oauth://',
       }),
-      z.record(z.string(), z.string()),
+      // The map form is dispatched verbatim (see resolveProviderBaseUrl), so an
+      // `oauth://` entry here would be handed straight to fetch. OAuth providers
+      // must declare the placeholder through the string form instead.
+      z.record(z.string(), z.string()).refine((urlMap) => !hasOAuthPlaceholder(urlMap), {
+        message:
+          "api_base_url map entries must be real URLs; use the string form api_base_url: 'oauth://' for OAuth providers",
+      }),
     ]),
     api_key: z.string().optional(),
     oauth_provider: OAuthProviderSchema.optional(),
@@ -894,6 +900,18 @@ export function getProviderTypes(provider: ProviderConfig): string[] {
       return typeof value === 'string' && value.length > 0;
     });
   }
+}
+
+/**
+ * `oauth://` is a placeholder, not a dispatchable endpoint: it marks a provider
+ * whose real upstream URL is resolved by the OAuth path at request time.
+ */
+export function isOAuthPlaceholderUrl(value: string): boolean {
+  return value.trim().toLowerCase().startsWith('oauth://');
+}
+
+function hasOAuthPlaceholder(urlMap: Record<string, string>): boolean {
+  return Object.values(urlMap).some(isOAuthPlaceholderUrl);
 }
 
 function isValidUrlOrOAuth(value: string): boolean {

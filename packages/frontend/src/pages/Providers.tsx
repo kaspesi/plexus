@@ -206,6 +206,7 @@ export const Providers = () => {
               onDismissTestMessage={f.dismissTestMessage}
               getApiBaseUrlMap={f.getApiBaseUrlMap}
               isNewProvider={!f.originalId}
+              isOAuthMode={f.isOAuthMode}
             />
           </div>
         </Modal>

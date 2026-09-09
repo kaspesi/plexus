@@ -26,6 +26,7 @@ import type { StallConfig } from '../inspectors/stall-inspector';
 import { sanitizeHeaders } from '../../utils/sanitize-headers';
 import type { RetryAttemptRecord } from './dispatcher-types';
 import { MediaDispatcher } from './media-dispatcher';
+import { editRequestToGenerationRequest } from '../../transformers/image';
 import { RequestManager, type RequestManagerHost } from './request-manager';
 import {
   appendFailureAttempt,
@@ -84,6 +85,7 @@ export class Dispatcher {
         buildRequestUrl: this.buildRequestUrl.bind(this),
         buildTimeoutError: this.buildTimeoutError.bind(this),
         createAttemptTimeout: this.createAttemptTimeout.bind(this),
+        dispatchImageGenerations: this.dispatchImageGenerations.bind(this),
         emitRoutingUpdate: this.emitRoutingUpdate.bind(this),
         executeProviderRequest: this.executeProviderRequest.bind(this),
         formatFailureReason: this.formatFailureReason.bind(this),
@@ -1061,7 +1063,14 @@ export class Dispatcher {
     return this.getMediaDispatcher().dispatchImageGenerations(request);
   }
 
+  /**
+   * @deprecated Image edits share the generation dispatch loop. Build a
+   * `UnifiedImageGenerationRequest` (upload as `input_references[0]`, optional
+   * inpainting mask as `mask`) and call `dispatchImageGenerations` instead.
+   */
   async dispatchImageEdits(request: UnifiedImageEditRequest): Promise<UnifiedImageEditResponse> {
-    return this.getMediaDispatcher().dispatchImageEdits(request);
+    return this.getMediaDispatcher().dispatchImageGenerations(
+      editRequestToGenerationRequest(request)
+    );
   }
 }

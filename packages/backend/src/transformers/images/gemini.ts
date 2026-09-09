@@ -61,6 +61,13 @@ function unsupportedOptions(request: UnifiedImageGenerationRequest): void {
   if (request.style !== undefined) {
     throw new ImageRequestValidationError('Native Gemini image generation does not support style');
   }
+  // Gemini has no inpainting-mask channel. Dropping the mask would silently
+  // repaint the whole image, so refuse instead.
+  if (request.mask !== undefined) {
+    throw new ImageRequestValidationError(
+      'Native Gemini image generation does not support mask images'
+    );
+  }
 }
 
 export class GeminiImageTransformer implements ImageGenerationTransformer {
