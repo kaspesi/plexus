@@ -128,10 +128,13 @@ async function resolveApiKey(
 
 function resolveCodexAccountId(
   ctx: { getOption<T>(key: string, def: T): T },
-  resolvedToken: string
+  rawInput: string
 ): string | null {
-  const fromToken = extractChatGPTAccountId(resolvedToken);
-  if (fromToken) return fromToken;
+  const accountClaim = extractChatGPTAccountId(rawInput);
+  if (accountClaim) return accountClaim;
+
+  const configured = ctx.getOption<string>('apiKey', '').trim();
+  if (configured) return null;
 
   const provider = ctx.getOption<string>('oauthProvider', 'openai-codex').trim() || 'openai-codex';
   const oauthAccountId = ctx.getOption<string>('oauthAccountId', '').trim();

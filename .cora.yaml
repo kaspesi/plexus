@@ -22,3 +22,9 @@ focus:
   - security
   - bugs
   - maintainability
+
+ignore:
+  files:
+    - "**/__tests__/**"
+    - "**/*.test.ts"
+    - "**/*.spec.ts"
