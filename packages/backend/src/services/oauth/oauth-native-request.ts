@@ -288,7 +288,7 @@ export function isCodexCliShapedBody(body: any): boolean {
 }
 
 /** Extract the ChatGPT account id from the Codex OAuth token's JWT claim. */
-function extractChatgptAccountId(token: string): string | undefined {
+export function extractChatgptAccountId(token: string): string | undefined {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return undefined;
@@ -462,7 +462,7 @@ const COPILOT_STATIC_HEADERS: Record<string, string> = {
 };
 
 /** Endpoint path for a Copilot wire API type. */
-function copilotEndpoint(apiType: string): string {
+export function copilotEndpoint(apiType: string): string {
   switch (apiType) {
     case 'messages':
       return '/v1/messages';
@@ -480,7 +480,7 @@ function copilotEndpoint(apiType: string): string {
  * must use the standard `api.githubcopilot.com` endpoint (the same fix the old
  * pi-ai executor path applied). Falls back to the individual endpoint.
  */
-function resolveCopilotBaseUrl(token: string): string {
+export function resolveCopilotBaseUrl(token: string): string {
   const match = token.match(/proxy-ep=([^;]+)/);
   if (match) {
     const proxyHost = match[1]!;
@@ -745,8 +745,20 @@ export async function prepareGenericOAuthDispatch(params: {
   apiType: string;
   oauthAccountId?: string | null;
   extraHeaders?: Record<string, string>;
+  forceRefresh?: boolean;
+  signal?: AbortSignal;
 }): Promise<PreparedOAuthRequest> {
-  const { provider, modelId, body, streaming, apiType, oauthAccountId, extraHeaders } = params;
+  const {
+    provider,
+    modelId,
+    body,
+    streaming,
+    apiType,
+    oauthAccountId,
+    extraHeaders,
+    forceRefresh,
+    signal,
+  } = params;
   const endpoint = GENERIC_OAUTH_ENDPOINTS[apiType];
   if (!endpoint) {
     throw new Error(
@@ -754,7 +766,13 @@ export async function prepareGenericOAuthDispatch(params: {
         `'${apiType}' for generic OAuth dispatch.`
     );
   }
-  const token = await OAuthAuthManager.getInstance().getApiKey(provider, oauthAccountId);
+  const token =
+    forceRefresh || signal
+      ? await OAuthAuthManager.getInstance().getApiKey(provider, oauthAccountId, {
+          forceRefresh,
+          signal,
+        })
+      : await OAuthAuthManager.getInstance().getApiKey(provider, oauthAccountId);
   const baseUrl = resolveOAuthBaseUrl(provider, modelId);
   const url = `${baseUrl}${endpoint}`;
   const headers: Record<string, string> = {
