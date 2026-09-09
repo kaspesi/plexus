@@ -27,10 +27,12 @@
  *      convention (`mcp-shape.ts`).
  *   2. `applyToolRenames()` — apply those renames across `tools[]`,
  *      `tool_choice`, and any `tool_use` blocks in message history.
- *   3. `stripDescriptionsAndInjectSyntheticTools()` — strip caller tool
- *      descriptions (fingerprint parity), except collision renames get a
+ *   3. `stripDescriptionsAndInjectSyntheticTools()` — by default strip caller
+ *      tool descriptions (fingerprint parity), except collision renames get a
  *      note instructing the model to prefer them over the real CC tool of
  *      their original name; prepend the synthetic Claude Code tool stubs.
+ *      With `options.preserveToolDescriptions` the caller's real descriptions
+ *      are kept instead (see `cc-tools.ts` for why that is safe/beneficial).
  *   4. `dedupeSyntheticToolCollisions()` — defensive backstop for the rare
  *      case a computed rename collides with one of the synthetic names.
  *   5. `injectClaudeCodeIdentity()` — replace `system[]` with the genuine
@@ -44,7 +46,7 @@
 
 import { buildToolRenamePairs } from './registry';
 import { applyToolRenames } from './rename-apply';
-import { stripDescriptionsAndInjectSyntheticTools } from './cc-tools';
+import { stripDescriptionsAndInjectSyntheticTools, type ToolMaskingOptions } from './cc-tools';
 import { dedupeSyntheticToolCollisions } from './dedupe';
 import { injectClaudeCodeIdentity } from './cc-identity';
 import { injectClaudeCodeMetadata } from './cc-metadata';
@@ -69,7 +71,10 @@ export interface ClaudeCodeMaskingResult {
  *   doesn't cover: the caller's raw system prompt passing through, and the
  *   unsigned CCH placeholder)
  */
-export function applyClaudeCodeMasking(payloadStr: string): ClaudeCodeMaskingResult {
+export function applyClaudeCodeMasking(
+  payloadStr: string,
+  options: ToolMaskingOptions = {}
+): ClaudeCodeMaskingResult {
   const parsedPayload = JSON.parse(payloadStr);
   // Anthropic's wire format calls a tool's schema `input_schema`; `ToolShape`
   // detectors (see cc-collision-shape.ts) read it as `parameters`.
@@ -80,7 +85,7 @@ export function applyClaudeCodeMasking(payloadStr: string): ClaudeCodeMaskingRes
   const toolRenamePairs = buildToolRenamePairs(toolDescriptors);
 
   let payload = applyToolRenames(parsedPayload, toolRenamePairs);
-  payload = stripDescriptionsAndInjectSyntheticTools(payload, toolRenamePairs);
+  payload = stripDescriptionsAndInjectSyntheticTools(payload, toolRenamePairs, options);
   // A computed rename above may target one of the reserved synthetic tool
   // names (Agent/NotebookEdit), producing a duplicate Anthropic rejects with
   // `400 tools: Tool names must be unique.`. This is a defensive backstop;
