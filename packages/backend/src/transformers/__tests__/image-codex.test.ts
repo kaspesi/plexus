@@ -367,6 +367,11 @@ describe('CodexImageTransformer', () => {
         transformer.transformGenerationResponse({ created: 1748372400, data: [{ url: 'x' }] })
       );
       expect(withoutBytes.routingContext.statusCode).toBe(502);
+
+      const emptyBytes = await rejection(
+        transformer.transformGenerationResponse({ created: 1748372400, data: [{ b64_json: '' }] })
+      );
+      expect(emptyBytes.routingContext.statusCode).toBe(502);
     });
   });
 });

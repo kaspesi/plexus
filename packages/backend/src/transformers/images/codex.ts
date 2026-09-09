@@ -190,7 +190,7 @@ export class CodexImageTransformer implements ImageGenerationTransformer {
 
     const data: UnifiedImageGenerationResponse['data'] = [];
     for (const item of Array.isArray(response.data) ? response.data : []) {
-      if (typeof item?.b64_json !== 'string') continue;
+      if (typeof item?.b64_json !== 'string' || item.b64_json.length === 0) continue;
       data.push({
         b64_json: item.b64_json,
         ...(mediaType !== undefined ? { media_type: mediaType } : {}),
