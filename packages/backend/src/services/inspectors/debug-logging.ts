@@ -11,6 +11,16 @@ const RESPONSES_TERMINAL_EVENT_TYPES = new Set([
   'response.incomplete',
 ]);
 
+/**
+ * Provider API types whose "raw" stream is a stream of unified chunk OBJECTS
+ * rather than provider SSE bytes. A non-objectMode PassThrough THROWS when an
+ * object is written to it, which would tear down the client's stream, so the
+ * tap must be created in object mode for these:
+ *   - `images`: the auto-bridge (services/dispatch/image-model-bridge.ts)
+ *     synthesizes unified chunks directly, with no provider wire in between.
+ */
+const OBJECT_CHUNK_API_TYPES = new Set(['oauth', 'images']);
+
 export class DebugLoggingInspector extends BaseInspector {
   private debugManager = DebugManager.getInstance();
   private mode: 'raw' | 'transformed';
@@ -44,7 +54,7 @@ export class DebugLoggingInspector extends BaseInspector {
     // With write-time capture, finalize() deterministically sees every chunk
     // written up to the instant it runs.
     const inspector = new PassThrough({
-      ...(providerApiType === 'oauth' ? { objectMode: true } : {}),
+      ...(OBJECT_CHUNK_API_TYPES.has(providerApiType) ? { objectMode: true } : {}),
       transform: (chunk: any, _encoding, callback) => {
         this.captureChunk(chunk);
         callback(null, chunk);
@@ -161,6 +171,12 @@ export class DebugLoggingInspector extends BaseInspector {
         case 'oauth':
           reconstructed = this.reconstructOAuth(rawBody);
           break;
+        // Bridged image output (services/dispatch/image-model-bridge.ts) is
+        // already unified — there is no provider wire format to reconstruct,
+        // and its usage is recorded from the client-facing transformed
+        // snapshot instead. No-op rather than a spurious "Unknown
+        // providerApiType" warning on every bridged stream.
+        case 'images':
         case 'unknown':
           break;
         default:
