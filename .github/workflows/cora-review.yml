@@ -41,12 +41,11 @@ jobs:
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.event.pull_request.base.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Fetch PR diff
+      - name: Verify PR revision before checkout
         if: steps.preflight.outputs.should_run == 'true'
-        id: diff
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -75,12 +74,41 @@ jobs:
               )
           PY
 
-          diff_file="$RUNNER_TEMP/cora-pr.diff"
-          gh api \
-            --header 'Accept: application/vnd.github.v3.diff' \
-            "repos/${REPOSITORY}/pulls/${PR_NUMBER}" \
-            > "$diff_file"
-          echo "Fetched PR diff ($(wc -c < "$diff_file") bytes)"
+      - name: Select trusted Cora configuration
+        if: steps.preflight.outputs.should_run == 'true'
+        id: config
+        run: |
+          config_file="$RUNNER_TEMP/cora-trusted.yaml"
+          if [ -f .cora.yaml ]; then
+            cp .cora.yaml "$config_file"
+            echo "Copied the base repository's .cora.yaml to a trusted path"
+          else
+            printf 'hook:\n  max_diff_size: 5242880\nllm:\n  timeout: 600\n' > "$config_file"
+            echo "Using trusted fallback Cora configuration"
+          fi
+          echo "path=$config_file" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR source for Cora
+        if: steps.preflight.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" fetch \
+            --no-tags \
+            origin \
+            "refs/pull/${PR_NUMBER}/head"
+
+          fetched_head="$(git rev-parse FETCH_HEAD)"
+          if [ "$fetched_head" != "$EXPECTED_HEAD_SHA" ]; then
+            echo "::error::PR changed while its source was being fetched. Expected $EXPECTED_HEAD_SHA, got $fetched_head."
+            exit 1
+          fi
+
+          git checkout --detach "$EXPECTED_HEAD_SHA"
 
           metadata_file="$RUNNER_TEMP/cora-pr-metadata-after.json"
           gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" > "$metadata_file"
@@ -97,27 +125,11 @@ jobs:
           actual_head = pull["head"]["sha"]
           if (actual_base, actual_head) != (expected_base, expected_head):
               raise SystemExit(
-                  "PR changed while its diff was being downloaded. "
+                  "PR changed while its source was being checked out. "
                   f"Expected base/head {expected_base}/{expected_head}, "
                   f"got {actual_base}/{actual_head}."
               )
           PY
-
-          echo "path=$diff_file" >> "$GITHUB_OUTPUT"
-
-      - name: Select trusted Cora configuration
-        if: steps.preflight.outputs.should_run == 'true'
-        id: config
-        run: |
-          if [ -f .cora.yaml ]; then
-            echo "Using the base repository's .cora.yaml"
-            echo "path=$GITHUB_WORKSPACE/.cora.yaml" >> "$GITHUB_OUTPUT"
-          else
-            config_file="$RUNNER_TEMP/cora-ci.yaml"
-            printf 'hook:\n  max_diff_size: 5242880\nllm:\n  timeout: 600\n' > "$config_file"
-            echo "Using trusted fallback Cora configuration"
-            echo "path=$config_file" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Normalize LLM base URL
         if: steps.preflight.outputs.should_run == 'true'
@@ -182,7 +194,7 @@ jobs:
           CORA_BASE_URL: ${{ steps.baseurl.outputs.url }}
           CORA_CONFIG: ${{ steps.config.outputs.path }}
           CORA_MODEL: kimi-k3
-          DIFF_FILE: ${{ steps.diff.outputs.path }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           REVIEW_FILE: ${{ runner.temp }}/cora-review.json
           ERROR_FILE: ${{ runner.temp }}/cora-review.error.log
         run: |
@@ -194,7 +206,7 @@ jobs:
           run_cora() {
             rm -f "$REVIEW_FILE" "$ERROR_FILE"
             cora review \
-              --diff-file "$DIFF_FILE" \
+              --base "$BASE_SHA" \
               --format json \
               --severity major \
               --max-diff-size 5242880 \
