@@ -28,7 +28,6 @@ import { getCatalogModel } from '../pi-ai/catalog';
 import type { OAuthProvider } from './oauth-providers';
 import { logger } from '../../utils/logger';
 import { OAuthAuthManager } from './oauth-auth-manager';
-import { ConfigService } from '../configuration/config-service';
 import {
   applyClaudeOAuthTransform,
   canonicalizeOAuthToolName,
@@ -156,19 +155,7 @@ function prepareAnthropicOAuthRequest(
     oauthMode: true,
   });
   const payloadStr = typeof transformed === 'string' ? transformed : JSON.stringify(transformed);
-  // Opt-in (default false): keep the caller's real tool descriptions on the
-  // masked body instead of blanking them. Read defensively — a missing/
-  // uninitialized config must never break request preparation.
-  let preserveToolDescriptions = false;
-  try {
-    preserveToolDescriptions =
-      ConfigService.getInstance().getConfig().oauthMasking?.preserveToolDescriptions ?? false;
-  } catch {
-    preserveToolDescriptions = false;
-  }
-  const { payload: maskedBody, toolRenamePairs } = applyClaudeCodeMasking(payloadStr, {
-    preserveToolDescriptions,
-  });
+  const { payload: maskedBody, toolRenamePairs } = applyClaudeCodeMasking(payloadStr);
 
   // The complete forward rename map for the CALLER's tools: original wire name
   // (what the client sent) -> final name on the outbound body (after both the

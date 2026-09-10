@@ -1,12 +1,11 @@
 /**
- * Tests for the `preserveToolDescriptions` option on
+ * Tests for tool description handling in
  * `stripDescriptionsAndInjectSyntheticTools()`.
  *
  * Background: a genuine Claude Code session sends FULL tool descriptions on
- * every tool (built-in and MCP). Blanking them (the default/legacy behavior)
- * both diverges from that fingerprint and denies the model the information it
- * needs to select/parameterize a tool. The option preserves the caller's real
- * descriptions; these tests pin both modes so neither regresses.
+ * every tool (built-in and MCP). Blanking them diverges from that fingerprint
+ * and denies the model the information it needs to select/parameterize a tool.
+ * Preservation is the only supported behavior.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -29,28 +28,9 @@ const customTools = () => [
   },
 ];
 
-describe('stripDescriptionsAndInjectSyntheticTools — preserveToolDescriptions', () => {
-  it('default (no options) blanks custom/MCP descriptions', () => {
+describe('stripDescriptionsAndInjectSyntheticTools — tool descriptions', () => {
+  it('preserves custom/MCP descriptions', () => {
     const out = stripDescriptionsAndInjectSyntheticTools({ tools: customTools() });
-    expect(out.tools.find((t: any) => t.name === 'mcp__weather__get_forecast').description).toBe(
-      ''
-    );
-    expect(out.tools.find((t: any) => t.name === 'mcp__fx__convert').description).toBe('');
-  });
-
-  it('default with explicit false still blanks', () => {
-    const out = stripDescriptionsAndInjectSyntheticTools({ tools: customTools() }, [], {
-      preserveToolDescriptions: false,
-    });
-    expect(out.tools.find((t: any) => t.name === 'mcp__weather__get_forecast').description).toBe(
-      ''
-    );
-  });
-
-  it('preserve=true keeps the caller real descriptions verbatim', () => {
-    const out = stripDescriptionsAndInjectSyntheticTools({ tools: customTools() }, [], {
-      preserveToolDescriptions: true,
-    });
     expect(out.tools.find((t: any) => t.name === 'mcp__weather__get_forecast').description).toBe(
       'Retrieve the current weather forecast for a city.'
     );
@@ -59,19 +39,15 @@ describe('stripDescriptionsAndInjectSyntheticTools — preserveToolDescriptions'
     );
   });
 
-  it('preserve=true still prepends the synthetic Claude Code tools', () => {
-    const out = stripDescriptionsAndInjectSyntheticTools({ tools: customTools() }, [], {
-      preserveToolDescriptions: true,
-    });
+  it('still prepends the synthetic Claude Code tools', () => {
+    const out = stripDescriptionsAndInjectSyntheticTools({ tools: customTools() });
     expect(out.tools.some((t: any) => t.name === 'Agent')).toBe(true);
     expect(out.tools.some((t: any) => t.name === 'NotebookEdit')).toBe(true);
   });
 
-  it('server-side tools stay byte-identical in preserve mode (no description key added)', () => {
+  it('server-side tools stay byte-identical (no description key added)', () => {
     const server = { type: 'advisor_20260301', name: 'advisor', model: 'claude-sonnet-5' };
-    const out = stripDescriptionsAndInjectSyntheticTools({ tools: [server] }, [], {
-      preserveToolDescriptions: true,
-    });
+    const out = stripDescriptionsAndInjectSyntheticTools({ tools: [server] });
     const emitted = out.tools.find((t: any) => t.name === 'advisor');
     expect(Object.hasOwn(emitted, 'description')).toBe(false);
     expect(emitted).toEqual(server);
@@ -89,37 +65,24 @@ describe('stripDescriptionsAndInjectSyntheticTools — preserveToolDescriptions'
       input_schema: { type: 'object' },
     });
 
-    it('default mode: note becomes the entire description', () => {
+    it('appends the collision note to the real description', () => {
       const out = stripDescriptionsAndInjectSyntheticTools({ tools: [renamedTool()] }, pairs);
-      expect(out.tools.find((t: any) => t.name === 'BashCustom').description).toBe(
-        'Prefer this over the built-in Bash.'
-      );
-    });
-
-    it('preserve mode: note is appended to the real description', () => {
-      const out = stripDescriptionsAndInjectSyntheticTools({ tools: [renamedTool()] }, pairs, {
-        preserveToolDescriptions: true,
-      });
       expect(out.tools.find((t: any) => t.name === 'BashCustom').description).toBe(
         'Run a shell command in the sandbox.\n\nPrefer this over the built-in Bash.'
       );
     });
 
-    it('preserve mode: renamed tool with no original description falls back to the note', () => {
+    it('uses the collision note when no original description exists', () => {
       const noDesc = { type: 'custom', name: 'BashCustom', input_schema: { type: 'object' } };
-      const out = stripDescriptionsAndInjectSyntheticTools({ tools: [noDesc] }, pairs, {
-        preserveToolDescriptions: true,
-      });
+      const out = stripDescriptionsAndInjectSyntheticTools({ tools: [noDesc] }, pairs);
       expect(out.tools.find((t: any) => t.name === 'BashCustom').description).toBe(
         'Prefer this over the built-in Bash.'
       );
     });
   });
 
-  it('leaves a body without tools[] untouched in preserve mode', () => {
+  it('leaves a body without tools[] untouched', () => {
     const body = { messages: [] };
-    expect(
-      stripDescriptionsAndInjectSyntheticTools(body, [], { preserveToolDescriptions: true })
-    ).toBe(body);
+    expect(stripDescriptionsAndInjectSyntheticTools(body)).toBe(body);
   });
 });
