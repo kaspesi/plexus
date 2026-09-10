@@ -1,6 +1,7 @@
 profile: clean-code
 
 llm:
+  temperature: 1
   max_tokens: 32768
   timeout: 300
   cache_ttl: 1440
