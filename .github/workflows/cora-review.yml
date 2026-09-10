@@ -97,7 +97,7 @@ jobs:
           EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" fetch \
+          git fetch \
             --no-tags \
             origin \
             "refs/pull/${PR_NUMBER}/head"
