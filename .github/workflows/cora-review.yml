@@ -183,8 +183,8 @@ jobs:
           CORA_CONFIG: ${{ steps.config.outputs.path }}
           CORA_MODEL: kimi-k3
           DIFF_FILE: ${{ steps.diff.outputs.path }}
-          RESULTS_FILE: ${{ runner.temp }}/cora-results.sarif
-          STDERR_FILE: ${{ runner.temp }}/cora-stderr.log
+          REVIEW_FILE: ${{ runner.temp }}/cora-review.json
+          ERROR_FILE: ${{ runner.temp }}/cora-review.error.log
         run: |
           if [ -z "$CORA_API_KEY" ]; then
             echo "::error::LLM_API_KEY is not configured"
@@ -192,58 +192,56 @@ jobs:
           fi
 
           run_cora() {
-            rm -f "$RESULTS_FILE" "$STDERR_FILE"
+            rm -f "$REVIEW_FILE" "$ERROR_FILE"
             cora review \
               --diff-file "$DIFF_FILE" \
-              --format sarif \
+              --format json \
               --severity major \
               --max-diff-size 5242880 \
               --quiet \
-              --output-file "$RESULTS_FILE" \
-              2> "$STDERR_FILE"
+              --output-file "$REVIEW_FILE" \
+              2> "$ERROR_FILE"
           }
 
           exit_code=1
           for attempt in 1 2 3; do
             if run_cora; then
-              exit_code=0
+              cora_exit_code=0
             else
-              exit_code=$?
+              cora_exit_code=$?
             fi
-            sarif_bytes=$(wc -c < "$RESULTS_FILE" 2>/dev/null || echo 0)
 
-            is_fallback=0
-            if [ "$sarif_bytes" -gt 10 ]; then
-              is_fallback=$(python3 -c "
-          import os
+            valid_review=$(python3 - "$REVIEW_FILE" <<'PY'
           import json
+          import sys
+          from pathlib import Path
+
           try:
-              data = json.load(open(os.environ['RESULTS_FILE']))
-              results = data.get('runs', [{}])[0].get('results', [])
-              if len(results) == 1:
-                  message = results[0].get('message', {}).get('text', '')
-                  print(int('could not complete' in message.lower()))
-              else:
-                  print(0)
-          except Exception:
-              print(0)
-          " 2>/dev/null || echo 0)
-            fi
+              review = json.loads(Path(sys.argv[1]).read_text())
+          except (FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+              print("false")
+          else:
+              issues = review.get("issues") if isinstance(review, dict) else None
+              valid = (
+                  isinstance(review, dict)
+                  and isinstance(issues, list)
+                  and all(isinstance(issue, dict) for issue in issues)
+              )
+              print(str(valid).lower())
+          PY
+            )
 
-            if [ "$is_fallback" -eq 1 ]; then
-              echo "::warning::Cora attempt $attempt returned fallback SARIF"
-              exit_code=1
-            fi
-
-            if [ "$sarif_bytes" -gt 10 ] && [ "$is_fallback" -eq 0 ]; then
-              # Cora can return exit 2 for findings when a trusted config enables
-              # a quality gate. The SARIF is still a valid review result.
+            if [ "$valid_review" = "true" ]; then
+              # Cora may return a nonzero status for findings or a configured
+              # quality gate. A valid JSON review is still usable in either case.
               exit_code=0
               break
             fi
 
-            if [ -s "$STDERR_FILE" ]; then
-              echo "::warning::Cora attempt $attempt failed: $(cat "$STDERR_FILE")"
+            if [ -s "$ERROR_FILE" ]; then
+              echo "::warning::Cora attempt $attempt failed: $(cat "$ERROR_FILE")"
+            elif [ "$cora_exit_code" -ne 0 ]; then
+              echo "::warning::Cora attempt $attempt exited with status $cora_exit_code without producing a valid JSON review"
             fi
             if [ "$attempt" -lt 3 ]; then
               sleep $((attempt * 20))
@@ -252,27 +250,10 @@ jobs:
 
           if [ "$exit_code" -ne 0 ]; then
             echo "::warning::Cora review could not complete after $attempt attempt(s)"
-            cat > "$RESULTS_FILE" <<'SARIF_EOF'
-          {
-            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
-            "version": "2.1.0",
-            "runs": [{
-              "tool": {
-                "driver": {
-                  "name": "cora",
-                  "informationUri": "https://github.com/codecoradev/cora-code",
-                  "version": "0.15.0"
-                }
-              },
-              "results": [{
-                "level": "warning",
-                "message": {
-                  "text": "Cora AI review could not complete after 3 attempts. Review was skipped."
-                }
-              }]
-            }]
-          }
-          SARIF_EOF
+            if [ -s "$ERROR_FILE" ]; then
+              echo "::error::$(cat "$ERROR_FILE")"
+            fi
+            exit 1
           fi
 
       - name: Post Cora review status
@@ -280,7 +261,8 @@ jobs:
         if: always() && steps.preflight.outputs.should_run == 'true'
         uses: actions/github-script@v9
         env:
-          RESULTS_FILE: ${{ runner.temp }}/cora-results.sarif
+          REVIEW_FILE: ${{ runner.temp }}/cora-review.json
+          ERROR_FILE: ${{ runner.temp }}/cora-review.error.log
         with:
           script: |
             const fs = require('fs');
@@ -288,50 +270,54 @@ jobs:
             const pullNumber = context.payload.pull_request.number;
             const reviewedHead = context.payload.pull_request.head.sha;
             const reviewedBase = context.payload.pull_request.base.sha;
-            let sarif;
+            let review;
 
             try {
-              sarif = JSON.parse(fs.readFileSync(process.env.RESULTS_FILE, 'utf8'));
+              review = JSON.parse(fs.readFileSync(process.env.REVIEW_FILE, 'utf8'));
             } catch {
-              sarif = null;
+              review = null;
             }
 
-            const results = (sarif?.runs ?? []).flatMap((run) => run.results ?? []);
-            const fallbackResult = results.find((result) =>
-              result.level === 'warning'
-              && (result.message?.text ?? '').toLowerCase().includes('could not complete'),
-            );
-            const fallback = Boolean(fallbackResult);
-            const failureMessage = !sarif
-              ? 'Cora did not produce a valid review result.'
-              : fallbackResult?.message?.text ?? '';
+            const issues = Array.isArray(review?.issues) ? review.issues : null;
+            const truncate = (value, length) => {
+              const text = String(value).replace(/@/g, '@\u200b');
+              return text.length > length ? `${text.slice(0, length)}...` : text;
+            };
+            let providerError = '';
+            try {
+              providerError = fs.readFileSync(process.env.ERROR_FILE, 'utf8').trim();
+            } catch {
+              providerError = '';
+            }
             let status;
 
-            if (!sarif || fallback) {
-              status = `⚠️ **Cora review could not complete.** ${failureMessage}`;
-              core.warning(failureMessage);
-            } else if (results.length === 0) {
+            if (!review || !issues) {
+              const failureMessage = providerError
+                ? `Cora error:\n\n\`\`\`\n${truncate(providerError, 6000)}\n\`\`\``
+                : 'Cora did not produce a valid JSON review result.';
+              status = `⚠️ **Cora review could not complete.**\n\n${failureMessage}`;
+              core.warning(providerError || 'Cora did not produce a valid JSON review result.');
+            } else if (issues.length === 0) {
               status = '✅ **Cora ran successfully.** No major concerns found.';
             } else {
-              const truncate = (value, length) => {
-                const text = String(value).replace(/@/g, '@\u200b');
-                return text.length > length ? `${text.slice(0, length)}...` : text;
-              };
-              const findings = results.map((result) => {
-                const location = result.locations?.[0]?.physicalLocation;
-                const file = location?.artifactLocation?.uri;
-                const line = location?.region?.startLine;
+              const findings = issues.map((issue) => {
+                const file = issue.file;
+                const line = issue.line;
                 const reference = file
                   ? `\`${truncate(file, 300)}:${line ?? '?'}\``
                   : 'general';
-                const severity = result.level ?? 'note';
-                const message = truncate(
-                  result.message?.text ?? result.message?.markdown ?? 'No message',
+                const severity = issue.severity ?? 'unknown';
+                const title = issue.title ? `**${truncate(issue.title, 500)}**` : '';
+                const body = truncate(
+                  issue.body ?? issue.message ?? 'No message',
                   2000,
                 );
-                return `- **${severity}** — ${reference}: ${message}`;
+                const suggestedFix = issue.suggested_fix
+                  ? `\n  - Suggested fix: ${truncate(issue.suggested_fix, 1000)}`
+                  : '';
+                return `- **${severity}** — ${reference}: ${title}${title ? ' ' : ''}${body}${suggestedFix}`;
               });
-              status = `⚠️ **Cora reported ${results.length} concern(s).**\n\n${findings.join('\n')}`;
+              status = `⚠️ **Cora reported ${issues.length} concern(s).**\n\n${findings.join('\n')}`;
             }
 
             let body = [
@@ -349,7 +335,7 @@ jobs:
               body = `${body.slice(0, 59500)}\n\n_Additional findings were omitted because the comment was too large._`;
             }
 
-            core.setOutput('review_failed', String(!sarif || fallback));
+            core.setOutput('review_failed', String(!review || !issues));
             try {
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner: context.repo.owner,
@@ -390,7 +376,7 @@ jobs:
       - name: Check for blocking Cora findings
         if: steps.preflight.outputs.should_run == 'true'
         env:
-          RESULTS_FILE: ${{ runner.temp }}/cora-results.sarif
+          REVIEW_FILE: ${{ runner.temp }}/cora-review.json
         run: |
           python3 <<'PY'
           import json
@@ -399,18 +385,12 @@ jobs:
           import sys
 
           try:
-              sarif = json.loads(Path(os.environ['RESULTS_FILE']).read_text())
+              review = json.loads(Path(os.environ['REVIEW_FILE']).read_text())
           except (FileNotFoundError, json.JSONDecodeError):
               sys.exit(0)
 
-          errors = [
-              result
-              for run in sarif.get('runs', [])
-              for result in run.get('results', [])
-              if result.get('level') == 'error'
-          ]
-          if errors:
-              print(f'Cora found {len(errors)} blocking issue(s).')
+          if review.get('should_block') is True:
+              print(f"Cora found {len(review.get('issues', []))} blocking issue(s).")
               sys.exit(1)
           PY
 
