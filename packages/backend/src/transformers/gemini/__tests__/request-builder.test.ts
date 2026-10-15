@@ -187,6 +187,50 @@ describe('Gemini Request Builder', () => {
       expect(decl.parameters).toBeDefined();
     });
 
+    it('sends JSON Schema tool params from Anthropic/OpenAI clients as parametersJsonSchema', async () => {
+      // Claude Code's tool schemas carry keys Gemini's OpenAPI-subset `parameters` rejects.
+      const schema = {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object' as const,
+        properties: {
+          file_path: { type: 'string' as const },
+          limit: { type: 'integer' as const, exclusiveMinimum: 0 },
+        },
+        required: ['file_path'],
+        additionalProperties: false,
+      };
+      const request: UnifiedChatRequest = {
+        messages: [{ role: 'user', content: 'Read a file' }],
+        model: 'gemini-3.1-pro-preview',
+        incomingApiType: 'messages',
+        tools: [{ type: 'function', function: { name: 'Read', parameters: schema as any } }],
+      };
+
+      const result = await buildGeminiRequest(request);
+      const decl = first(result.tools!.find((t) => t.functionDeclarations)!.functionDeclarations!);
+
+      expect(decl.parametersJsonSchema).toEqual(schema);
+      expect(decl.parameters).toBeUndefined();
+    });
+
+    it('keeps legacy parameters for native Gemini clients', async () => {
+      const parameters = { type: 'OBJECT', properties: { city: { type: 'STRING' } } };
+      const request: UnifiedChatRequest = {
+        messages: [{ role: 'user', content: 'Get weather' }],
+        model: 'gemini-3.1-pro-preview',
+        incomingApiType: 'gemini',
+        tools: [
+          { type: 'function', function: { name: 'get_weather', parameters: parameters as any } },
+        ],
+      };
+
+      const result = await buildGeminiRequest(request);
+      const decl = first(result.tools!.find((t) => t.functionDeclarations)!.functionDeclarations!);
+
+      expect(decl.parameters).toEqual(parameters);
+      expect(decl.parametersJsonSchema).toBeUndefined();
+    });
+
     it('should prefer parametersJsonSchema over parameters when both available', async () => {
       const request: UnifiedChatRequest = {
         messages: [{ role: 'user', content: 'Get weather' }],
@@ -396,6 +440,67 @@ describe('Gemini Request Builder', () => {
       expect(tools.some((t) => t.functionDeclarations)).toBe(true);
       expect(tools.some((t) => t.googleSearch)).toBe(true);
       expect(tools.some((t) => t.codeExecution)).toBe(true);
+    });
+  });
+
+  describe('thoughtSignature on history functionCalls', () => {
+    const history = (incomingApiType: string, signature?: string): UnifiedChatRequest => ({
+      model: 'gemini-3.1-pro-preview',
+      incomingApiType,
+      messages: [
+        { role: 'user', content: 'Run the tests' },
+        {
+          role: 'assistant',
+          content: '',
+          ...(signature && { thinking: { content: 'run them', signature } }),
+          tool_calls: [
+            {
+              id: 'toolu_1',
+              type: 'function',
+              function: { name: 'Bash', arguments: '{"command":"ls"}' },
+            },
+            {
+              id: 'toolu_2',
+              type: 'function',
+              function: { name: 'Read', arguments: '{"file_path":"a"}' },
+            },
+          ],
+        },
+        { role: 'tool', tool_call_id: 'toolu_1', name: 'Bash', content: 'a' },
+        { role: 'tool', tool_call_id: 'toolu_2', name: 'Read', content: 'b' },
+      ],
+    });
+
+    const functionCallParts = (result: Awaited<ReturnType<typeof buildGeminiRequest>>) =>
+      result.contents.flatMap((c) => c.parts ?? []).filter((p: any) => p.functionCall) as any[];
+
+    it('uses the placeholder signature for unsigned Anthropic history', async () => {
+      const parts = functionCallParts(await buildGeminiRequest(history('messages')));
+
+      expect(parts.map((p) => p.functionCall.name)).toEqual(['Bash', 'Read']);
+      expect(parts[0].thoughtSignature).toBe('skip_thought_signature_validator');
+      expect(parts[1].thoughtSignature).toBeUndefined();
+    });
+
+    it('never forwards a Claude thinking signature to Gemini', async () => {
+      const parts = functionCallParts(
+        await buildGeminiRequest(history('messages', 'Q2xhdWRlU2ln'))
+      );
+
+      expect(parts[0].thoughtSignature).toBe('skip_thought_signature_validator');
+    });
+
+    it('keeps a real signature from OpenAI-compatible clients', async () => {
+      const parts = functionCallParts(await buildGeminiRequest(history('chat', 'R2VtaW5pU2ln')));
+
+      expect(parts[0].thoughtSignature).toBe('R2VtaW5pU2ln');
+      expect(parts[1].thoughtSignature).toBeUndefined();
+    });
+
+    it('adds no placeholder for non-Anthropic clients', async () => {
+      const parts = functionCallParts(await buildGeminiRequest(history('chat')));
+
+      expect(parts[0].thoughtSignature).toBeUndefined();
     });
   });
 });
