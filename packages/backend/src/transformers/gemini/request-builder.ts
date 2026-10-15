@@ -3,6 +3,9 @@ import { UnifiedChatRequest, GoogleBuiltInToolType, ThinkLevel } from '../../typ
 import { convertUnifiedPartsToGemini } from './part-mapper';
 import { ensureContentsEndWithUser } from './utils/model-tail';
 
+// https://ai.google.dev/gemini-api/docs/thought-signatures (FAQ: history from another model)
+const DUMMY_THOUGHT_SIGNATURE = 'skip_thought_signature_validator';
+
 /**
  * Unified ThinkLevel → Gemini ThinkingLevel enum. Gemini has no level above
  * HIGH, so the extended canonical efforts (xhigh, max) clamp to HIGH.
@@ -77,9 +80,17 @@ export async function buildGeminiRequest(
     }
   }
 
+  // Gemini 3 requires a thoughtSignature on the first functionCall of every model
+  // turn in the history. Anthropic clients cannot hand one back: their history was
+  // produced by Claude (any signature on it is Claude's and Gemini rejects it) or by
+  // an earlier Gemini turn whose signature did not survive the translation. Gemini
+  // accepts this documented placeholder for history built outside of it.
+  const isFromAnthropic = request.incomingApiType?.toLowerCase() === 'messages';
+
   for (const msg of request.messages) {
     let role = '';
     const parts: Part[] = [];
+    const thoughtSignature = isFromAnthropic ? undefined : msg.thinking?.signature;
 
     // Skip system messages if we have explicit systemInstruction (Gap 1)
     if (msg.role === 'system' && request.systemInstruction) {
@@ -101,8 +112,8 @@ export async function buildGeminiRequest(
 
       if (typeof msg.content === 'string') {
         const part: any = { text: msg.content };
-        if (msg.thinking?.signature && !msg.tool_calls) {
-          part.thoughtSignature = msg.thinking.signature;
+        if (thoughtSignature && !msg.tool_calls) {
+          part.thoughtSignature = thoughtSignature;
         }
         parts.push(part);
       } else if (Array.isArray(msg.content)) {
@@ -117,8 +128,11 @@ export async function buildGeminiRequest(
               args: JSON.parse(tc.function.arguments),
             },
           };
-          if (index === 0 && msg.thinking?.signature)
-            part.thoughtSignature = msg.thinking.signature;
+          if (index === 0) {
+            const signature =
+              thoughtSignature ?? (isFromAnthropic ? DUMMY_THOUGHT_SIGNATURE : undefined);
+            if (signature) part.thoughtSignature = signature;
+          }
           parts.push(part);
         });
       }
@@ -147,6 +161,8 @@ export async function buildGeminiRequest(
 
   // Gap 4 & 5: Transform Unified tools to Gemini function declarations or built-in tools
   if (request.tools && request.tools.length > 0) {
+    const isTranslatedFromJsonSchemaApi =
+      !!request.incomingApiType && request.incomingApiType.toLowerCase() !== 'gemini';
     const functionDeclarations = [];
     const googleSearches: any[] = [];
     const codeExecutions: any[] = [];
@@ -162,6 +178,12 @@ export async function buildGeminiRequest(
 
         if (t.function.parametersJsonSchema) {
           funcDecl.parametersJsonSchema = t.function.parametersJsonSchema;
+        } else if (t.function.parameters && isTranslatedFromJsonSchemaApi) {
+          // Anthropic / OpenAI tool schemas are full JSON Schema ($schema,
+          // additionalProperties, exclusiveMinimum, ...). Gemini's `parameters`
+          // only takes its OpenAPI subset and 400s on those keys, while
+          // `parametersJsonSchema` accepts them as-is.
+          funcDecl.parametersJsonSchema = t.function.parameters;
         } else if (t.function.parameters) {
           funcDecl.parameters = t.function.parameters;
         }
