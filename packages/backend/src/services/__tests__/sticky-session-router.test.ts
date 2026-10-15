@@ -194,4 +194,59 @@ describe('Router sticky_session integration', () => {
 
     expect(result[0]?.provider).toBe('p3');
   });
+
+  describe('with a fallback target group', () => {
+    function configWithFallbackGroup(): any {
+      const cfg = configWithThreeTargets();
+      cfg.models['sticky-alias'] = {
+        sticky_session: true,
+        target_groups: [
+          {
+            name: 'primary',
+            selector: 'in_order',
+            targets: [
+              { provider: 'p1', model: 'm1' },
+              { provider: 'p2', model: 'm2' },
+            ],
+          },
+          { name: 'fallback', selector: 'in_order', targets: [{ provider: 'p3', model: 'm3' }] },
+        ],
+      };
+      return cfg;
+    }
+
+    test('does not hoist a sticky pick from the fallback group once the primary group recovers', async () => {
+      setConfigForTesting(configWithFallbackGroup());
+
+      // The session was served by the fallback while the primary group was down.
+      StickySessionManager.getInstance().set('sticky-alias', 'chat', 'm:abc', 'p3', 'm3');
+
+      const result = await Router.resolveCandidates('sticky-alias', 'chat', 'm:abc');
+
+      expect(result.map((r) => r.provider)).toEqual(['p1', 'p2', 'p3']);
+    });
+
+    test('still hoists a sticky pick within the primary group', async () => {
+      setConfigForTesting(configWithFallbackGroup());
+
+      StickySessionManager.getInstance().set('sticky-alias', 'chat', 'm:abc', 'p2', 'm2');
+
+      const result = await Router.resolveCandidates('sticky-alias', 'chat', 'm:abc');
+
+      expect(result.map((r) => r.provider)).toEqual(['p2', 'p1', 'p3']);
+    });
+
+    test('keeps the fallback sticky pick while the primary group is still down', async () => {
+      setConfigForTesting(configWithFallbackGroup());
+      registerSpy(CooldownManager.getInstance(), 'filterHealthyTargets').mockImplementation(
+        async (targets: any[]) => targets.filter((t: any) => t.provider === 'p3')
+      );
+
+      StickySessionManager.getInstance().set('sticky-alias', 'chat', 'm:abc', 'p3', 'm3');
+
+      const result = await Router.resolveCandidates('sticky-alias', 'chat', 'm:abc');
+
+      expect(result.map((r) => r.provider)).toEqual(['p3']);
+    });
+  });
 });

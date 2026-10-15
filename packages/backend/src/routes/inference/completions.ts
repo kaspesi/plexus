@@ -176,6 +176,9 @@ export async function registerCompletionsRoute(
 
       logger.error('Error processing Completions request', e);
       const statusCode = e.routingContext?.statusCode || 500;
+      if (e.routingContext?.retryAfterSeconds) {
+        reply.header('retry-after', String(e.routingContext.retryAfterSeconds));
+      }
       const errorType =
         statusCode === 401
           ? 'authentication_error'

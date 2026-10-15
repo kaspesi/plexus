@@ -118,6 +118,36 @@ describe('Router target groups', () => {
     );
   });
 
+  test('resolve answers 503 with a retry-after hint when every target is cooling down', async () => {
+    setConfigForTesting(
+      makeGroupedConfig([
+        { name: 'g1', selector: 'in_order', targets: [{ provider: 'p1', model: 'model-1' }] },
+        { name: 'g2', selector: 'in_order', targets: [{ provider: 'p2', model: 'model-2' }] },
+      ])
+    );
+    await cooldownManager.markProviderFailure('p1', 'model-1', 45_000);
+    await cooldownManager.markProviderFailure('p2', 'model-2', 600_000);
+
+    const error: any = await Router.resolve('test-alias').catch((e) => e);
+    expect(error.message).toBe("No healthy target selected for alias 'test-alias'");
+    expect(error.routingContext.statusCode).toBe(503);
+    expect(error.routingContext.code).toBe('no_healthy_target');
+    expect(error.routingContext.retryAfterSeconds).toBe(45);
+  });
+
+  test('retry-after hint is capped at 60s for long (quota) cooldowns', async () => {
+    setConfigForTesting(
+      makeGroupedConfig([
+        { name: 'g1', selector: 'in_order', targets: [{ provider: 'p1', model: 'model-1' }] },
+      ])
+    );
+    await cooldownManager.markProviderFailure('p1', '', 5 * 60 * 60 * 1000);
+
+    const error: any = await Router.resolve('test-alias').catch((e) => e);
+    expect(error.routingContext.statusCode).toBe(503);
+    expect(error.routingContext.retryAfterSeconds).toBe(60);
+  });
+
   test('empty group is skipped', async () => {
     setConfigForTesting(
       makeGroupedConfig([
