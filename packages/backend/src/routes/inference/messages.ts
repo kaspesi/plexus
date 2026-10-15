@@ -188,12 +188,19 @@ export async function registerMessagesRoute(
 
       logger.error('Error processing Anthropic request', e);
       const statusCode = e.routingContext?.statusCode || 500;
+      if (e.routingContext?.retryAfterSeconds) {
+        reply.header('retry-after', String(e.routingContext.retryAfterSeconds));
+      }
       const errorType =
         statusCode === 401
           ? 'authentication_error'
           : statusCode === 400
             ? 'invalid_request_error'
-            : 'api_error';
+            : // Claude Code classifies overloaded_error as a capacity error: it keeps
+              // retrying it (and waits indefinitely under CLAUDE_CODE_RETRY_WATCHDOG).
+              statusCode === 503
+              ? 'overloaded_error'
+              : 'api_error';
       const errorCode = e.routingContext?.code;
       return reply.code(statusCode).send({
         type: 'error',

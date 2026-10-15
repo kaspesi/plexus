@@ -205,6 +205,20 @@ export class CooldownManager {
 
     const key = CooldownManager.makeCooldownKey(provider, model);
     const existingEntry = this.cooldowns.get(key);
+
+    // Requests already in flight when the first failure lands will fail too (one
+    // upstream blip, N concurrent requests). Counting each as a new consecutive
+    // failure doubles the backoff N times within seconds, so a 5s overload turns
+    // into a 16-minute outage. While a backoff cooldown is active, later failures
+    // without an explicit duration don't escalate it.
+    if (!durationMs && existingEntry && existingEntry.expiry > Date.now()) {
+      logger.debug(
+        `Provider '${provider}' model '${model}' already cooling down until ` +
+          `${new Date(existingEntry.expiry).toISOString()}; not escalating`
+      );
+      return;
+    }
+
     const consecutiveFailures = (existingEntry?.consecutiveFailures || 0) + 1;
 
     // Calculate duration using exponential backoff if not provided (e.g., from 429 parser)
@@ -339,6 +353,25 @@ export class CooldownManager {
     }
 
     return healthyTargets;
+  }
+
+  /**
+   * Milliseconds until the first of `targets` leaves cooldown, or null when none of
+   * them is cooling down. A target is blocked until both its own and its
+   * provider-wide (quota) cooldown have expired.
+   */
+  public getSoonestRecoveryMs(targets: Target[]): number | null {
+    const now = Date.now();
+    let soonest: number | null = null;
+    for (const { provider, model } of targets) {
+      const expiries = [model, '']
+        .map((m) => this.cooldowns.get(CooldownManager.makeCooldownKey(provider, m))?.expiry ?? 0)
+        .filter((expiry) => expiry > now);
+      if (expiries.length === 0) continue;
+      const blockedFor = Math.max(...expiries) - now;
+      if (soonest === null || blockedFor < soonest) soonest = blockedFor;
+    }
+    return soonest;
   }
 
   public async removeCooldowns(targets: Target[]): Promise<Target[]> {

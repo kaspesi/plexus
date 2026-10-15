@@ -195,6 +195,9 @@ export async function registerGeminiRoute(
 
       logger.error('Error processing Gemini request', e);
       const statusCode = e.routingContext?.statusCode || 500;
+      if (e.routingContext?.retryAfterSeconds) {
+        reply.header('retry-after', String(e.routingContext.retryAfterSeconds));
+      }
       const errorReason = e.routingContext?.code;
       const status =
         statusCode === 401

@@ -346,6 +346,9 @@ export async function registerResponsesRoute(
       logger.error('Error processing Responses API request', e);
 
       const statusCode = e.routingContext?.statusCode || 500;
+      if (e.routingContext?.retryAfterSeconds) {
+        reply.header('retry-after', String(e.routingContext.retryAfterSeconds));
+      }
       const errorCode = e.routingContext?.code;
       return reply.code(statusCode).send({
         error: {
