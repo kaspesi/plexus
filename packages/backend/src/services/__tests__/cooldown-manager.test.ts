@@ -1,9 +1,18 @@
-import { describe, expect, test, beforeEach, afterEach } from 'vitest';
+import { describe, expect, test, beforeEach, afterEach, vi } from 'vitest';
 import { CooldownManager } from '../runtime/cooldown-manager';
 import { setConfigForTesting } from '../../config';
 
+// A failure only escalates the backoff once the previous cooldown has lapsed
+// (failures during an active cooldown are in-flight requests from the same
+// incident). Jump the clock past any cooldown, then record the next failure.
+async function failAfterCooldownLapses(cm: CooldownManager, provider: string, model: string) {
+  vi.setSystemTime(Date.now() + 24 * 60 * 60 * 1000);
+  await cm.markProviderFailure(provider, model);
+}
+
 describe('CooldownManager', () => {
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     CooldownManager.resetInstance();
     await CooldownManager.getInstance().clearCooldown();
   });
@@ -11,6 +20,7 @@ describe('CooldownManager', () => {
   afterEach(async () => {
     await CooldownManager.getInstance().clearCooldown();
     CooldownManager.resetInstance();
+    vi.useRealTimers();
   });
 
   describe('exponential backoff', () => {
@@ -56,7 +66,7 @@ describe('CooldownManager', () => {
       // Clear and simulate second failure
       await cm.clearCooldown('test-provider', 'test-model');
       await cm.markProviderFailure('test-provider', 'test-model');
-      await cm.markProviderFailure('test-provider', 'test-model');
+      await failAfterCooldownLapses(cm, 'test-provider', 'test-model');
 
       const cooldowns = cm.getCooldowns();
       const cooldown = cooldowns[0]!;
@@ -90,8 +100,9 @@ describe('CooldownManager', () => {
         await cm.clearCooldown(provider, model);
 
         // Mark failure i+1 times
-        for (let j = 0; j <= i; j++) {
-          await cm.markProviderFailure(provider, model);
+        await cm.markProviderFailure(provider, model);
+        for (let j = 1; j <= i; j++) {
+          await failAfterCooldownLapses(cm, provider, model);
         }
 
         const cooldowns = cm.getCooldowns().filter((c) => c.provider === provider);
@@ -120,7 +131,7 @@ describe('CooldownManager', () => {
 
       // Force many failures to hit the cap
       for (let i = 0; i < 10; i++) {
-        await cm.markProviderFailure(provider, model);
+        await failAfterCooldownLapses(cm, provider, model);
       }
 
       const cooldowns = cm.getCooldowns().filter((c) => c.provider === provider);
@@ -130,6 +141,67 @@ describe('CooldownManager', () => {
       // Should be capped at 10 minutes, not 2^10 * 2 = 2048 minutes
       expect(durationMinutes).toBeLessThanOrEqual(10);
       expect(durationMinutes).toBeGreaterThanOrEqual(9);
+    });
+
+    test('failures during an active cooldown do not escalate it', async () => {
+      setConfigForTesting({
+        providers: {},
+        models: {},
+        keys: {},
+        cooldown: { initialMinutes: 2, maxMinutes: 300 },
+        failover: { enabled: false, retryableStatusCodes: [], retryableErrors: [] },
+        quotas: [],
+      } as any);
+
+      const cm = CooldownManager.getInstance();
+      const start = Date.now();
+
+      // One upstream overload, four requests in flight: 2026-10-15 incident.
+      for (let i = 0; i < 4; i++) {
+        vi.setSystemTime(start + i * 1000);
+        await cm.markProviderFailure('burst', 'model');
+      }
+
+      const [cooldown] = cm.getCooldowns().filter((c) => c.provider === 'burst');
+      expect(cooldown!.consecutiveFailures).toBe(1);
+      expect(cooldown!.expiry).toBe(start + 2 * 60 * 1000);
+    });
+
+    test('an explicit duration (429 retry-after, quota) still overrides an active cooldown', async () => {
+      const cm = CooldownManager.getInstance();
+      const start = Date.now();
+
+      await cm.markProviderFailure('explicit', 'model');
+      await cm.markProviderFailure('explicit', 'model', 30 * 60 * 1000, 'rate limited');
+
+      const [cooldown] = cm.getCooldowns().filter((c) => c.provider === 'explicit');
+      expect(cooldown!.expiry).toBe(start + 30 * 60 * 1000);
+      expect(cooldown!.consecutiveFailures).toBe(2);
+      expect(cooldown!.lastError).toBe('rate limited');
+    });
+  });
+
+  describe('getSoonestRecoveryMs', () => {
+    test('returns null when no target is cooling down', () => {
+      const cm = CooldownManager.getInstance();
+      expect(cm.getSoonestRecoveryMs([{ provider: 'a', model: 'm' }])).toBeNull();
+    });
+
+    test('returns the earliest recovery across targets, honouring provider-wide cooldowns', async () => {
+      const cm = CooldownManager.getInstance();
+
+      await cm.markProviderFailure('a', 'm', 90_000);
+      await cm.markProviderFailure('b', 'm', 30_000);
+      // b is also quota-blocked provider-wide for 10 minutes, so it recovers later than a.
+      await cm.markProviderFailure('b', '', 600_000);
+
+      expect(
+        cm.getSoonestRecoveryMs([
+          { provider: 'a', model: 'm' },
+          { provider: 'b', model: 'm' },
+        ])
+      ).toBe(90_000);
+      expect(cm.getSoonestRecoveryMs([{ provider: 'b', model: 'm' }])).toBe(600_000);
     });
   });
 
@@ -149,8 +221,8 @@ describe('CooldownManager', () => {
 
       // Create multiple failures
       await cm.markProviderFailure(provider, model);
-      await cm.markProviderFailure(provider, model);
-      await cm.markProviderFailure(provider, model);
+      await failAfterCooldownLapses(cm, provider, model);
+      await failAfterCooldownLapses(cm, provider, model);
 
       let cooldowns = cm.getCooldowns().filter((c) => c.provider === provider);
       expect(cooldowns[0]!.consecutiveFailures).toBe(3);
@@ -192,7 +264,7 @@ describe('CooldownManager', () => {
       const cm = CooldownManager.getInstance();
 
       await cm.markProviderFailure('p1', 'm1');
-      await cm.markProviderFailure('p1', 'm1');
+      await failAfterCooldownLapses(cm, 'p1', 'm1');
       await cm.markProviderFailure('p2', 'm2');
 
       const cooldowns = cm.getCooldowns();

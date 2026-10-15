@@ -531,6 +531,11 @@ async function buildGroupCandidates(
   return merged;
 }
 
+// Cap on the Retry-After sent when no target is healthy. Long cooldowns (e.g. a
+// weekly quota) still get a short hint so clients keep polling rather than
+// sleeping for hours or giving up on an over-long Retry-After.
+const MAX_NO_HEALTHY_RETRY_AFTER_SECONDS = 60;
+
 export class Router {
   static async resolveCandidates(
     modelName: string,
@@ -596,6 +601,11 @@ export class Router {
       );
     }
 
+    // Candidates from the first group that has any healthy target. Sticky
+    // sessions only hoist within this group: a session that landed on a later
+    // (fallback) group while the primary group was down must move back to the
+    // primary group as soon as one of its targets recovers.
+    let primaryCandidates: RouteResult[] | null = null;
     for (const group of alias.target_groups) {
       const results = await buildGroupCandidates(
         group,
@@ -607,15 +617,16 @@ export class Router {
         sessionKey,
         nextVisited
       );
+      if (primaryCandidates === null && results.length > 0) primaryCandidates = results;
       orderedCandidates.push(...results);
     }
 
     orderedCandidates = dedupeCandidates(orderedCandidates);
 
     if (stickyPick) {
-      const idx = orderedCandidates.findIndex(
-        (c) => c.provider === stickyPick!.provider && c.model === stickyPick!.model
-      );
+      const isPick = (c: RouteResult) =>
+        c.provider === stickyPick!.provider && c.model === stickyPick!.model;
+      const idx = primaryCandidates?.some(isPick) ? orderedCandidates.findIndex(isPick) : -1;
       if (idx > 0) {
         const [picked] = orderedCandidates.splice(idx, 1);
         orderedCandidates.unshift(picked!);
@@ -718,7 +729,27 @@ export class Router {
         return target;
       }
 
-      throw new Error(`No healthy target selected for alias '${modelName}'`);
+      // Every target is cooling down or filtered out. Answer 503 with a
+      // Retry-After (when a cooldown will lift) so clients back off and retry
+      // instead of treating it as a fatal 500.
+      const allTargets = alias.target_groups.flatMap((g) =>
+        g.targets
+          .filter((t) => t.provider && t.model && t.enabled !== false)
+          .map((t) => ({ provider: t.provider!, model: t.model! }))
+      );
+      const recoveryMs = CooldownManager.getInstance().getSoonestRecoveryMs(allTargets);
+      const error = new Error(`No healthy target selected for alias '${modelName}'`) as any;
+      error.routingContext = {
+        statusCode: 503,
+        code: 'no_healthy_target',
+        ...(recoveryMs !== null && {
+          retryAfterSeconds: Math.min(
+            MAX_NO_HEALTHY_RETRY_AFTER_SECONDS,
+            Math.max(1, Math.ceil(recoveryMs / 1000))
+          ),
+        }),
+      };
+      throw error;
     }
 
     throw new Error(`Model '${modelName}' not found in configuration`);
