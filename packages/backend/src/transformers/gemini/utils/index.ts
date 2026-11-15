@@ -5,3 +5,4 @@ export {
   ensureContentsEndWithUser,
   isTextOnlyModelContent,
 } from './model-tail';
+export { sanitizeGeminiFunctionParameters } from './function-schema';

@@ -2,6 +2,7 @@ import { Content, Part, Tool } from '@google/genai';
 
 import { GoogleBuiltInToolType, ThinkLevel, UnifiedChatRequest } from '../../types/unified';
 import { convertUnifiedPartsToGemini } from './part-mapper';
+import { sanitizeGeminiFunctionParameters } from './utils/function-schema';
 import { ensureContentsEndWithUser } from './utils/model-tail';
 
 /**
@@ -164,7 +165,9 @@ export async function buildGeminiRequest(
         if (t.function.parametersJsonSchema) {
           funcDecl.parametersJsonSchema = t.function.parametersJsonSchema;
         } else if (t.function.parameters) {
-          funcDecl.parameters = t.function.parameters;
+          // `parameters` is Gemini's OpenAPI-subset Schema proto: raw JSON Schema
+          // keys ($schema, additionalProperties, const, ...) are a hard 400.
+          funcDecl.parameters = sanitizeGeminiFunctionParameters(t.function.parameters);
         }
 
         functionDeclarations.push(funcDecl);
