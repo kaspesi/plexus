@@ -2,6 +2,10 @@ import { Content, Part, Tool } from '@google/genai';
 
 import { GoogleBuiltInToolType, ThinkLevel, UnifiedChatRequest } from '../../types/unified';
 import { convertUnifiedPartsToGemini } from './part-mapper';
+import { sanitizeGeminiFunctionParameters } from './utils/function-schema';
+
+// https://ai.google.dev/gemini-api/docs/thought-signatures (FAQ: history from another model)
+const DUMMY_THOUGHT_SIGNATURE = 'skip_thought_signature_validator';
 import { ensureContentsEndWithUser } from './utils/model-tail';
 
 /**
@@ -78,9 +82,17 @@ export async function buildGeminiRequest(
     }
   }
 
+  // Gemini 3 requires a thoughtSignature on the first functionCall of every model
+  // turn in the history. Anthropic clients cannot hand one back: their history was
+  // produced by Claude (any signature on it is Claude's and Gemini rejects it) or by
+  // an earlier Gemini turn whose signature did not survive the translation. Gemini
+  // accepts this documented placeholder for history built outside of it.
+  const isFromAnthropic = request.incomingApiType?.toLowerCase() === 'messages';
+
   for (const msg of request.messages) {
     let role = '';
     const parts: Part[] = [];
+    const thoughtSignature = isFromAnthropic ? undefined : msg.thinking?.signature;
 
     // Skip system messages if we have explicit systemInstruction (Gap 1)
     if (msg.role === 'system' && request.systemInstruction) {
@@ -102,8 +114,8 @@ export async function buildGeminiRequest(
 
       if (typeof msg.content === 'string') {
         const part: any = { text: msg.content };
-        if (msg.thinking?.signature && !msg.tool_calls) {
-          part.thoughtSignature = msg.thinking.signature;
+        if (thoughtSignature && !msg.tool_calls) {
+          part.thoughtSignature = thoughtSignature;
         }
         parts.push(part);
       } else if (Array.isArray(msg.content)) {
@@ -118,8 +130,11 @@ export async function buildGeminiRequest(
               args: JSON.parse(tc.function.arguments),
             },
           };
-          if (index === 0 && msg.thinking?.signature)
-            part.thoughtSignature = msg.thinking.signature;
+          if (index === 0) {
+            const signature =
+              thoughtSignature ?? (isFromAnthropic ? DUMMY_THOUGHT_SIGNATURE : undefined);
+            if (signature) part.thoughtSignature = signature;
+          }
           parts.push(part);
         });
       }
@@ -164,7 +179,9 @@ export async function buildGeminiRequest(
         if (t.function.parametersJsonSchema) {
           funcDecl.parametersJsonSchema = t.function.parametersJsonSchema;
         } else if (t.function.parameters) {
-          funcDecl.parameters = t.function.parameters;
+          // `parameters` is Gemini's OpenAPI-subset Schema proto: raw JSON Schema
+          // keys ($schema, additionalProperties, const, ...) are a hard 400.
+          funcDecl.parameters = sanitizeGeminiFunctionParameters(t.function.parameters);
         }
 
         functionDeclarations.push(funcDecl);
